@@ -30,6 +30,8 @@
   #drop p{color:var(--muted); font-size:.9rem;}
   #drop strong{color:var(--brand);}
   #parseInfo{margin-top:10px; font-size:.9rem; color:var(--ok); display:none;}
+  #parseWarn{margin-top:6px; font-size:.88rem; color:#b45309; display:none;}
+  .auto{background:#f0fdf4 !important;}
   /* items table */
   table{width:100%; border-collapse:collapse; font-size:.88rem;}
   th{text-align:left; padding:8px 6px; color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.03em; border-bottom:2px solid var(--line);}
@@ -63,6 +65,7 @@
     </div>
     <input type="file" id="file" accept=".xls,.xlsx" hidden>
     <div id="parseInfo"></div>
+    <div id="parseWarn"></div>
   </div>
 
   <!-- PASO 2: datos generales -->
@@ -197,6 +200,70 @@ function fmt(n){ return n.toLocaleString('en-US',{minimumFractionDigits:2,maximu
   });
 });
 
+/* ===== reconocimiento de cliente / país de la proforma ===== */
+// Quita acentos, puntuación y pasa a mayúsculas para poder comparar
+function norm_(s){
+  return String(s).toUpperCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+}
+// Palabras societarias que no ayudan a identificar al cliente
+const STOP_ = ['INC','SA','SRL','SAS','LTD','LTDA','LLC','CORP','COMPANY','GROUP','THE','AND','DEL','BOOKS','MUSIC','STORE','STORES'];
+// Países que en la proforma vienen en inglés
+const PAIS_EN_ = {
+  'SPAIN':'ESPAÑA', 'SOUTH AFRICA':'SUDÁFRICA', 'DOMINICAN REPUBLIC':'REP DOMINICANA',
+  'DOMINICAN REP':'REP DOMINICANA', 'REPUBLICA DOMINICANA':'REP DOMINICANA'
+};
+// Busca una etiqueta (ej. "Customer") y devuelve el primer valor no vacío a su derecha
+function findLabelValue_(rows, maxRow, labels){
+  for(let r = 0; r < maxRow; r++){
+    const row = rows[r] || [];
+    for(let c = 0; c < row.length; c++){
+      const lab = String(row[c]).trim().toLowerCase().replace(/[:\s]+$/,'');
+      if(labels.includes(lab)){
+        for(let k = c + 1; k < row.length; k++){
+          const v = row[k];
+          if(v !== '' && v !== null && v !== undefined) return v;
+        }
+      }
+    }
+  }
+  return '';
+}
+// Elige de la lista del Sheet la opción que mejor coincide con el texto de la proforma
+// Ej: "Indigo Books & Music Inc." → "INDIGO"
+function bestMatch_(text, list){
+  const t = norm_(text);
+  if(!t || !list || !list.length) return '';
+  let best = '', score = 0;
+  list.forEach(item => {
+    const n = norm_(item);
+    if(!n) return;
+    let s = 0;
+    if(n === t){
+      s = 100;
+    } else if(new RegExp('\\b' + n.replace(/ /g,'\\s+') + '\\b').test(t)){
+      s = 80 + n.length;            // la opción aparece completa dentro del texto
+    } else if(new RegExp('\\b' + t.replace(/ /g,'\\s+') + '\\b').test(n)){
+      s = 70 + t.length;            // el texto es parte de la opción
+    } else {
+      const toks = n.split(' ').filter(w => w.length >= 4 && !STOP_.includes(w));
+      const hits = toks.filter(w => new RegExp('\\b' + w + '\\b').test(t)).length;
+      if(hits) s = 40 + hits * 10;  // coincidencia por palabras sueltas
+    }
+    if(s > score){ score = s; best = item; }
+  });
+  return score >= 40 ? best : '';
+}
+function setAuto_(id, value){
+  const el = document.getElementById(id);
+  if(!value) return false;
+  el.value = value;
+  if(el.value !== value) return false;   // no existe en la lista
+  el.classList.add('auto');
+  return true;
+}
+
 // ---------- lectura de la proforma ----------
 const drop = document.getElementById('drop'), fileInput = document.getElementById('file');
 drop.addEventListener('click', () => fileInput.click());
@@ -246,30 +313,57 @@ function parseProforma(file){
         count++;
       }
 
-      // N° de proforma: primer número de 6-12 dígitos antes de la tabla
+      const detectado = [], pendiente = [];
+
+      // --- Cliente: etiqueta "Customer" ---
+      const rawCliente = findLabelValue_(rows, hRow, ['customer','cliente','sold to','bill to','buyer']);
+      const cliente = bestMatch_(rawCliente, LISTS.clientes);
+      if(setAuto_('cliente', cliente)) detectado.push('Cliente: ' + cliente);
+      else if(rawCliente) pendiente.push(`Cliente ("${String(rawCliente).trim()}" no coincide con la lista)`);
+
+      // --- País: etiqueta "Country" ---
+      let rawPais = String(findLabelValue_(rows, hRow, ['country','pais','país'])).trim();
+      const paisEn = PAIS_EN_[norm_(rawPais)];
+      const pais = bestMatch_(paisEn || rawPais, LISTS.paises);
+      if(setAuto_('pais', pais)) detectado.push('País: ' + pais);
+      else if(rawPais) pendiente.push(`País ("${rawPais}" no coincide con la lista)`);
+
+      // --- N° de proforma: número largo antes de la tabla ---
       outer:
       for(let r = 0; r < hRow; r++){
         for(const c of rows[r]){
           if(typeof c === 'number' && c >= 1e5 && c < 1e12 && Number.isInteger(c)){
             document.getElementById('nroProforma').value = c;
+            detectado.push('N° ' + c);
             break outer;
           }
         }
       }
-      // Fecha: celda a la derecha de "Date:"
-      for(let r = 0; r < hRow; r++){
-        const idx = rows[r].findIndex(c => String(c).trim().toLowerCase().startsWith('date'));
-        if(idx >= 0 && typeof rows[r][idx+1] === 'number'){
-          const d = XLSX.SSF.parse_date_code(rows[r][idx+1]);
-          if(d) document.getElementById('fecha').value =
+
+      // --- Fecha: etiqueta "Date" → también define el Quarter ---
+      const rawFecha = findLabelValue_(rows, hRow, ['date','fecha','invoice date']);
+      if(typeof rawFecha === 'number'){
+        const d = XLSX.SSF.parse_date_code(rawFecha);
+        if(d){
+          document.getElementById('fecha').value =
             `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
-          break;
+          document.getElementById('fecha').classList.add('auto');
+          setAuto_('quarter', 'Q' + (Math.floor((d.m - 1) / 3) + 1));
+          detectado.push(`Fecha: ${String(d.d).padStart(2,'0')}/${String(d.m).padStart(2,'0')}/${d.y}`);
         }
       }
 
       const info = document.getElementById('parseInfo');
       info.style.display = 'block';
-      info.textContent = `✓ ${file.name} — ${count} ítem(s) extraído(s). Revisá y completá los campos faltantes.`;
+      info.textContent = `✓ ${file.name} — ${count} ítem(s)` +
+        (detectado.length ? ' · ' + detectado.join(' · ') : '') + '.';
+      const warn = document.getElementById('parseWarn');
+      if(pendiente.length){
+        warn.style.display = 'block';
+        warn.textContent = '⚠ Completá a mano: ' + pendiente.join(' · ');
+      } else {
+        warn.style.display = 'none';
+      }
     }catch(err){
       alert('No pude leer la proforma: ' + err.message + '\nPodés cargar los ítems a mano.');
     }
@@ -319,6 +413,8 @@ async function submitAll(){
     showMsg('ok', `✓ Se cargaron ${data.added} fila(s) en el Dashboard (desde la fila ${data.firstRow}).`);
     document.getElementById('items').innerHTML = '';
     document.getElementById('parseInfo').style.display = 'none';
+    document.getElementById('parseWarn').style.display = 'none';
+    document.querySelectorAll('.auto').forEach(el => el.classList.remove('auto'));
     fileInput.value = '';
     recalc();
   }catch(err){
