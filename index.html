@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mooving — Carga de Proforma</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#ffffff; --ink:#1a1d24; --muted:#6b7280;
+    --brand:#e8443a; --brand-dark:#c93830; --line:#e5e7eb; --ok:#16a34a;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--ink); padding:24px 16px 80px;}
+  .wrap{max-width:1080px; margin:0 auto;}
+  h1{font-size:1.5rem; margin-bottom:4px;}
+  .sub{color:var(--muted); margin-bottom:24px;}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; margin-bottom:20px;}
+  .card h2{font-size:1.05rem; margin-bottom:14px;}
+  label{display:block; font-size:.8rem; font-weight:600; color:var(--muted); margin-bottom:4px; text-transform:uppercase; letter-spacing:.03em;}
+  input,select{width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; font-size:.95rem; background:#fff;}
+  input:focus,select:focus{outline:2px solid var(--brand); border-color:transparent;}
+  .grid{display:grid; gap:14px;}
+  .g4{grid-template-columns:repeat(4,1fr);}
+  .g3{grid-template-columns:repeat(3,1fr);}
+  @media(max-width:760px){.g4,.g3{grid-template-columns:1fr 1fr;}}
+  /* dropzone */
+  #drop{border:2px dashed #cbd5e1; border-radius:12px; padding:34px; text-align:center; cursor:pointer; transition:.15s; background:#fafbfc;}
+  #drop.over{border-color:var(--brand); background:#fff5f4;}
+  #drop p{color:var(--muted); font-size:.9rem;}
+  #drop strong{color:var(--brand);}
+  #parseInfo{margin-top:10px; font-size:.9rem; color:var(--ok); display:none;}
+  /* items table */
+  table{width:100%; border-collapse:collapse; font-size:.88rem;}
+  th{text-align:left; padding:8px 6px; color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.03em; border-bottom:2px solid var(--line);}
+  td{padding:6px 4px; border-bottom:1px solid var(--line); vertical-align:top;}
+  td input, td select{padding:7px 8px; font-size:.87rem;}
+  .del{background:none; border:none; color:#b91c1c; cursor:pointer; font-size:1.05rem; padding:6px;}
+  .subtotal{text-align:right; white-space:nowrap; padding-top:12px; font-variant-numeric:tabular-nums;}
+  .btn{display:inline-block; border:none; border-radius:8px; padding:11px 20px; font-size:.95rem; font-weight:600; cursor:pointer;}
+  .btn-brand{background:var(--brand); color:#fff;}
+  .btn-brand:hover{background:var(--brand-dark);}
+  .btn-ghost{background:#fff; border:1px solid var(--line); color:var(--ink);}
+  .totalbar{display:flex; justify-content:space-between; align-items:center; margin-top:14px; flex-wrap:wrap; gap:10px;}
+  .total{font-size:1.05rem; font-weight:700; font-variant-numeric:tabular-nums;}
+  #msg{margin-top:16px; padding:14px; border-radius:8px; display:none; font-size:.95rem;}
+  #msg.ok{display:block; background:#f0fdf4; border:1px solid #bbf7d0; color:#166534;}
+  #msg.err{display:block; background:#fef2f2; border:1px solid #fecaca; color:#991b1b;}
+  .loading{opacity:.55; pointer-events:none;}
+  .badge{display:inline-block; background:#eef2ff; color:#4338ca; border-radius:99px; padding:2px 10px; font-size:.75rem; font-weight:600; margin-left:8px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Carga de Proforma Invoice</h1>
+  <p class="sub">Subí la proforma o cargá los ítems a mano. Los datos se agregan solos al Mooving Dashboard.</p>
+
+  <!-- PASO 1: archivo -->
+  <div class="card">
+    <h2>1 · Proforma <span style="font-weight:400;color:var(--muted);font-size:.85rem">(opcional — también podés cargar a mano)</span></h2>
+    <div id="drop">
+      <p><strong>Arrastrá la proforma acá</strong> o hacé clic para elegir el archivo (.xls / .xlsx)</p>
+    </div>
+    <input type="file" id="file" accept=".xls,.xlsx" hidden>
+    <div id="parseInfo"></div>
+  </div>
+
+  <!-- PASO 2: datos generales -->
+  <div class="card">
+    <h2>2 · Datos generales <span id="listState" class="badge">cargando listas…</span></h2>
+    <div class="grid g4">
+      <div><label>Fecha</label><input type="date" id="fecha"></div>
+      <div><label>Cliente</label><select id="cliente"></select></div>
+      <div><label>País</label><select id="pais"></select></div>
+      <div><label>FC Samedy</label><input type="text" id="fcSamedy" placeholder="Ej: A 1398"></div>
+    </div>
+    <div class="grid g4" style="margin-top:14px">
+      <div><label>Quarter</label><select id="quarter"><option value=""></option><option>Q1</option><option>Q2</option><option>Q3</option><option>Q4</option></select></div>
+      <div><label>Temporada</label><input type="text" id="temporada" placeholder="Ej: COLORING"></div>
+      <div><label>N° Proforma</label><input type="text" id="nroProforma" placeholder="Se completa solo al subir el archivo"></div>
+    </div>
+    <p style="margin-top:14px; font-size:.85rem; color:var(--muted)">Valores por defecto para los ítems (podés cambiarlos por fila):</p>
+    <div class="grid g3" style="margin-top:8px">
+      <div><label>Categoría</label><select id="defCategoria"></select></div>
+      <div><label>Licencia</label><select id="defLicencia"></select></div>
+      <div><label>Sello</label><select id="defSello"></select></div>
+    </div>
+  </div>
+
+  <!-- PASO 3: items -->
+  <div class="card">
+    <h2>3 · Ítems</h2>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th style="width:110px">SKU</th><th>Descripción</th><th style="width:130px">Categoría</th>
+          <th style="width:90px">Cantidad</th><th style="width:100px">FOB Vta (u.)</th>
+          <th style="width:130px">Licencia</th><th style="width:120px">Sello</th>
+          <th style="width:95px;text-align:right">Total</th><th style="width:30px"></th>
+        </tr></thead>
+        <tbody id="items"></tbody>
+      </table>
+    </div>
+    <div class="totalbar">
+      <button class="btn btn-ghost" onclick="addItem()">+ Agregar ítem</button>
+      <div class="total">Total: <span id="grandTotal">USD 0.00</span></div>
+    </div>
+  </div>
+
+  <button class="btn btn-brand" id="send" onclick="submitAll()">Cargar al Google Sheet</button>
+  <div id="msg"></div>
+</div>
+
+<script>
+/* ================== CONFIGURACIÓN ================== */
+const API_URL = 'https://script.google.com/a/macros/moovingargentina.com.ar/s/AKfycbw5Qph_PCMJhltrrJC2mKIQnpzFDqwAi5x_YmNF1kW95BsVNvz0aQfD-fckf_Gw1knh/exec';
+const TOKEN   = 'mooving2026'; // debe coincidir con Code.gs
+/* =================================================== */
+
+let LISTS = { clientes:[], paises:[], categorias:[], licencias:[], sellos:[] };
+
+// ---------- cargar listas desde el Sheet ----------
+async function loadLists(){
+  const badge = document.getElementById('listState');
+  try{
+    const res = await fetch(API_URL);
+    const data = await res.json();
+    if(!data.ok) throw new Error(data.error);
+    LISTS = data.lists;
+    fillSelect('cliente', LISTS.clientes, true);
+    fillSelect('pais', LISTS.paises, true);
+    fillSelect('defCategoria', LISTS.categorias, true);
+    fillSelect('defLicencia', LISTS.licencias, true);
+    fillSelect('defSello', LISTS.sellos, true);
+    document.querySelectorAll('#items select').forEach(refreshRowSelect);
+    badge.textContent = 'listas actualizadas del Sheet';
+    badge.style.background = '#f0fdf4'; badge.style.color = '#166534';
+  }catch(e){
+    badge.textContent = 'no se pudieron cargar las listas';
+    badge.style.background = '#fef2f2'; badge.style.color = '#991b1b';
+  }
+}
+function fillSelect(id, opts, empty){
+  const el = typeof id === 'string' ? document.getElementById(id) : id;
+  const cur = el.value;
+  el.innerHTML = (empty ? '<option value=""></option>' : '') +
+    opts.map(o => `<option>${o}</option>`).join('');
+  if(cur) el.value = cur;
+}
+function refreshRowSelect(sel){
+  const kind = sel.dataset.kind;
+  if(kind) fillSelect(sel, LISTS[kind], true);
+}
+
+// ---------- filas de ítems ----------
+function addItem(data = {}){
+  const tb = document.getElementById('items');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input class="i-sku" value="${data.sku ?? ''}"></td>
+    <td><input class="i-desc" value="${esc(data.descripcion ?? '')}"></td>
+    <td><select class="i-cat" data-kind="categorias"></select></td>
+    <td><input class="i-qty" type="number" min="0" value="${data.qty ?? ''}"></td>
+    <td><input class="i-price" type="number" step="0.01" min="0" value="${data.fobVta ?? ''}"></td>
+    <td><select class="i-lic" data-kind="licencias"></select></td>
+    <td><select class="i-sello" data-kind="sellos"></select></td>
+    <td class="subtotal i-sub">—</td>
+    <td><button class="del" title="Quitar" onclick="this.closest('tr').remove();recalc()">✕</button></td>`;
+  tb.appendChild(tr);
+  // poblar selects con defaults
+  const cat = tr.querySelector('.i-cat'), lic = tr.querySelector('.i-lic'), sel = tr.querySelector('.i-sello');
+  fillSelect(cat, LISTS.categorias, true); cat.value = data.categoria ?? document.getElementById('defCategoria').value;
+  fillSelect(lic, LISTS.licencias, true); lic.value = data.licencia ?? document.getElementById('defLicencia').value;
+  fillSelect(sel, LISTS.sellos, true);    sel.value = data.sello ?? document.getElementById('defSello').value;
+  tr.querySelectorAll('input').forEach(i => i.addEventListener('input', recalc));
+  recalc();
+}
+function esc(s){ return String(s).replace(/"/g,'&quot;'); }
+function recalc(){
+  let total = 0;
+  document.querySelectorAll('#items tr').forEach(tr => {
+    const q = parseFloat(tr.querySelector('.i-qty').value) || 0;
+    const p = parseFloat(tr.querySelector('.i-price').value) || 0;
+    const s = q * p;
+    tr.querySelector('.i-sub').textContent = s ? fmt(s) : '—';
+    total += s;
+  });
+  document.getElementById('grandTotal').textContent = 'USD ' + fmt(total);
+}
+function fmt(n){ return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+// aplicar defaults a filas existentes cuando cambian
+['defCategoria','defLicencia','defSello'].forEach(id => {
+  document.getElementById(id).addEventListener('change', e => {
+    const map = {defCategoria:'.i-cat', defLicencia:'.i-lic', defSello:'.i-sello'};
+    document.querySelectorAll('#items ' + map[id]).forEach(s => { if(!s.value) s.value = e.target.value; });
+  });
+});
+
+// ---------- lectura de la proforma ----------
+const drop = document.getElementById('drop'), fileInput = document.getElementById('file');
+drop.addEventListener('click', () => fileInput.click());
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); if(e.dataTransfer.files[0]) parseProforma(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', () => { if(fileInput.files[0]) parseProforma(fileInput.files[0]); });
+
+function parseProforma(file){
+  const reader = new FileReader();
+  reader.onload = e => {
+    try{
+      const wb = XLSX.read(e.target.result, {type:'array', cellDates:false});
+      const sh = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sh, {header:1, raw:true, defval:''});
+
+      // ubicar fila de encabezados (contiene CODE y Qty)
+      let hRow = -1, cols = {};
+      for(let r = 0; r < Math.min(rows.length, 30); r++){
+        const cells = rows[r].map(c => String(c).trim().toLowerCase());
+        if(cells.includes('code') && cells.some(c => c === 'qty')){
+          hRow = r;
+          cells.forEach((c, i) => {
+            if(c === 'code') cols.sku = i;
+            if(c === 'description') cols.desc = i;
+            if(c === 'qty') cols.qty = i;
+            if(c === 'unit price') cols.price = i;
+          });
+          break;
+        }
+      }
+      if(hRow < 0) throw new Error('No encontré la tabla de ítems (encabezados CODE / Qty).');
+
+      // extraer ítems: filas con CODE y Description no vacíos
+      document.getElementById('items').innerHTML = '';
+      let count = 0;
+      for(let r = hRow + 1; r < rows.length; r++){
+        const row = rows[r];
+        const sku = row[cols.sku], desc = row[cols.desc];
+        if(sku === '' || desc === '') { if(count) break; else continue; }
+        addItem({
+          sku: String(sku).replace(/\.0$/,''),
+          descripcion: String(desc).trim(),
+          qty: Number(row[cols.qty]) || '',
+          fobVta: Number(row[cols.price]) || ''
+        });
+        count++;
+      }
+
+      // N° de proforma: primer número de 6-12 dígitos antes de la tabla
+      outer:
+      for(let r = 0; r < hRow; r++){
+        for(const c of rows[r]){
+          if(typeof c === 'number' && c >= 1e5 && c < 1e12 && Number.isInteger(c)){
+            document.getElementById('nroProforma').value = c;
+            break outer;
+          }
+        }
+      }
+      // Fecha: celda a la derecha de "Date:"
+      for(let r = 0; r < hRow; r++){
+        const idx = rows[r].findIndex(c => String(c).trim().toLowerCase().startsWith('date'));
+        if(idx >= 0 && typeof rows[r][idx+1] === 'number'){
+          const d = XLSX.SSF.parse_date_code(rows[r][idx+1]);
+          if(d) document.getElementById('fecha').value =
+            `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+          break;
+        }
+      }
+
+      const info = document.getElementById('parseInfo');
+      info.style.display = 'block';
+      info.textContent = `✓ ${file.name} — ${count} ítem(s) extraído(s). Revisá y completá los campos faltantes.`;
+    }catch(err){
+      alert('No pude leer la proforma: ' + err.message + '\nPodés cargar los ítems a mano.');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ---------- envío ----------
+async function submitAll(){
+  const msg = document.getElementById('msg');
+  msg.className = ''; msg.style.display = 'none';
+
+  const g = id => document.getElementById(id).value.trim();
+  const general = {
+    fecha: g('fecha'), cliente: g('cliente'), pais: g('pais'),
+    fcSamedy: g('fcSamedy'), quarter: g('quarter'), temporada: g('temporada')
+  };
+  if(!general.fecha || !general.cliente || !general.pais){
+    return showMsg('err', 'Completá al menos Fecha, Cliente y País.');
+  }
+  const items = [];
+  document.querySelectorAll('#items tr').forEach(tr => {
+    const v = cls => tr.querySelector(cls).value.trim();
+    if(v('.i-sku') || v('.i-desc')){
+      items.push({
+        ...general,
+        sku: v('.i-sku'), descripcion: v('.i-desc'), categoria: v('.i-cat'),
+        qty: v('.i-qty'), fobVta: v('.i-price'),
+        licencia: v('.i-lic'), sello: v('.i-sello')
+      });
+    }
+  });
+  if(!items.length) return showMsg('err', 'Agregá al menos un ítem.');
+  const inc = items.find(i => !i.qty || !i.fobVta || !i.categoria);
+  if(inc) return showMsg('err', 'Todos los ítems necesitan Categoría, Cantidad y FOB Vta.');
+
+  const btn = document.getElementById('send');
+  btn.classList.add('loading'); btn.textContent = 'Cargando…';
+  try{
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'text/plain;charset=utf-8'}, // evita preflight CORS
+      body: JSON.stringify({ token: TOKEN, rows: items })
+    });
+    const data = await res.json();
+    if(!data.ok) throw new Error(data.error);
+    showMsg('ok', `✓ Se cargaron ${data.added} fila(s) en el Dashboard (desde la fila ${data.firstRow}).`);
+    document.getElementById('items').innerHTML = '';
+    document.getElementById('parseInfo').style.display = 'none';
+    fileInput.value = '';
+    recalc();
+  }catch(err){
+    showMsg('err', 'Error al cargar: ' + err.message);
+  }finally{
+    btn.classList.remove('loading'); btn.textContent = 'Cargar al Google Sheet';
+  }
+}
+function showMsg(cls, text){
+  const msg = document.getElementById('msg');
+  msg.className = cls; msg.textContent = text;
+  msg.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+// ---------- init ----------
+document.getElementById('fecha').valueAsDate = new Date();
+loadLists();
+addItem();
+</script>
+</body>
+</html>
