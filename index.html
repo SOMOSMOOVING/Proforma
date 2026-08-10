@@ -22,8 +22,7 @@
   input:focus,select:focus{outline:2px solid var(--brand); border-color:transparent;}
   .grid{display:grid; gap:14px;}
   .g4{grid-template-columns:repeat(4,1fr);}
-  .g3{grid-template-columns:repeat(3,1fr);}
-  @media(max-width:760px){.g4,.g3{grid-template-columns:1fr 1fr;}}
+  @media(max-width:760px){.g4{grid-template-columns:1fr 1fr;}}
   /* dropzone */
   #drop{border:2px dashed #cbd5e1; border-radius:12px; padding:34px; text-align:center; cursor:pointer; transition:.15s; background:#fafbfc;}
   #drop.over{border-color:var(--brand); background:#fff5f4;}
@@ -32,6 +31,7 @@
   #parseInfo{margin-top:10px; font-size:.9rem; color:var(--ok); display:none;}
   #parseWarn{margin-top:6px; font-size:.88rem; color:#b45309; display:none;}
   .auto{background:#f0fdf4 !important;}
+  .hint{font-size:.82rem; color:var(--muted); margin-top:10px;}
   /* items table */
   table{width:100%; border-collapse:collapse; font-size:.88rem;}
   th{text-align:left; padding:8px 6px; color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.03em; border-bottom:2px solid var(--line);}
@@ -82,12 +82,6 @@
       <div><label>Temporada</label><input type="text" id="temporada" placeholder="Ej: COLORING"></div>
       <div><label>N° Proforma</label><input type="text" id="nroProforma" placeholder="Se completa solo al subir el archivo"></div>
     </div>
-    <p style="margin-top:14px; font-size:.85rem; color:var(--muted)">Valores por defecto para los ítems (podés cambiarlos por fila):</p>
-    <div class="grid g3" style="margin-top:8px">
-      <div><label>Categoría</label><select id="defCategoria"></select></div>
-      <div><label>Licencia</label><select id="defLicencia"></select></div>
-      <div><label>Sello</label><select id="defSello"></select></div>
-    </div>
   </div>
 
   <!-- PASO 3: items -->
@@ -104,6 +98,7 @@
         <tbody id="items"></tbody>
       </table>
     </div>
+    <p class="hint">Categoría, Licencia y Sello se completan solos según el SKU, tomando cómo se cargó ese mismo SKU en el histórico del Dashboard. Si es un SKU nuevo quedan vacíos para que los elijas.</p>
     <div class="totalbar">
       <button class="btn btn-ghost" onclick="addItem()">+ Agregar ítem</button>
       <div class="total">Total: <span id="grandTotal">USD 0.00</span></div>
@@ -121,8 +116,9 @@ const TOKEN   = 'mooving2026'; // debe coincidir con Code.gs
 /* =================================================== */
 
 let LISTS = { clientes:[], paises:[], categorias:[], licencias:[], sellos:[] };
+let SKUS  = {};   // SKU → [Categoría, Licencia, Sello, Descripción]
 
-// ---------- cargar listas desde el Sheet ----------
+// ---------- cargar listas y catálogo desde el Sheet ----------
 async function loadLists(){
   const badge = document.getElementById('listState');
   try{
@@ -130,13 +126,15 @@ async function loadLists(){
     const data = await res.json();
     if(!data.ok) throw new Error(data.error);
     LISTS = data.lists;
+    SKUS  = data.skus || {};
     fillSelect('cliente', LISTS.clientes, true);
     fillSelect('pais', LISTS.paises, true);
-    fillSelect('defCategoria', LISTS.categorias, true);
-    fillSelect('defLicencia', LISTS.licencias, true);
-    fillSelect('defSello', LISTS.sellos, true);
-    document.querySelectorAll('#items select').forEach(refreshRowSelect);
-    badge.textContent = 'listas actualizadas del Sheet';
+    // refrescar filas ya creadas
+    document.querySelectorAll('#items tr').forEach(tr => {
+      tr.querySelectorAll('select').forEach(refreshRowSelect);
+      applySku_(tr);
+    });
+    badge.textContent = `listas actualizadas · ${Object.keys(SKUS).length} SKU en catálogo`;
     badge.style.background = '#f0fdf4'; badge.style.color = '#166534';
   }catch(e){
     badge.textContent = 'no se pudieron cargar las listas';
@@ -155,6 +153,26 @@ function refreshRowSelect(sel){
   if(kind) fillSelect(sel, LISTS[kind], true);
 }
 
+// ---------- autocompletado por SKU ----------
+// Busca el SKU en el histórico y completa Categoría / Licencia / Sello
+function applySku_(tr, force){
+  const sku = tr.querySelector('.i-sku').value.trim().replace(/\.0$/,'');
+  const cat = tr.querySelector('.i-cat'), lic = tr.querySelector('.i-lic'), sel = tr.querySelector('.i-sello');
+  const info = SKUS[sku];
+  if(!info){
+    if(force) [cat, lic, sel].forEach(el => el.classList.remove('auto'));
+    return false;
+  }
+  [[cat, info[0]], [lic, info[1]], [sel, info[2]]].forEach(([el, val]) => {
+    if(!val) return;
+    if(force || !el.value){
+      el.value = val;
+      if(el.value === val) el.classList.add('auto'); else el.classList.remove('auto');
+    }
+  });
+  return true;
+}
+
 // ---------- filas de ítems ----------
 function addItem(data = {}){
   const tb = document.getElementById('items');
@@ -170,13 +188,14 @@ function addItem(data = {}){
     <td class="subtotal i-sub">—</td>
     <td><button class="del" title="Quitar" onclick="this.closest('tr').remove();recalc()">✕</button></td>`;
   tb.appendChild(tr);
-  // poblar selects con defaults
-  const cat = tr.querySelector('.i-cat'), lic = tr.querySelector('.i-lic'), sel = tr.querySelector('.i-sello');
-  fillSelect(cat, LISTS.categorias, true); cat.value = data.categoria ?? document.getElementById('defCategoria').value;
-  fillSelect(lic, LISTS.licencias, true); lic.value = data.licencia ?? document.getElementById('defLicencia').value;
-  fillSelect(sel, LISTS.sellos, true);    sel.value = data.sello ?? document.getElementById('defSello').value;
+  tr.querySelectorAll('select').forEach(refreshRowSelect);
+  applySku_(tr);                                       // completa según el SKU
+  tr.querySelector('.i-sku').addEventListener('change', () => applySku_(tr, true));
   tr.querySelectorAll('input').forEach(i => i.addEventListener('input', recalc));
+  // si el usuario elige a mano, se apaga el resaltado verde
+  tr.querySelectorAll('select').forEach(s => s.addEventListener('change', () => s.classList.remove('auto')));
   recalc();
+  return tr;
 }
 function esc(s){ return String(s).replace(/"/g,'&quot;'); }
 function recalc(){
@@ -191,14 +210,6 @@ function recalc(){
   document.getElementById('grandTotal').textContent = 'USD ' + fmt(total);
 }
 function fmt(n){ return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
-
-// aplicar defaults a filas existentes cuando cambian
-['defCategoria','defLicencia','defSello'].forEach(id => {
-  document.getElementById(id).addEventListener('change', e => {
-    const map = {defCategoria:'.i-cat', defLicencia:'.i-lic', defSello:'.i-sello'};
-    document.querySelectorAll('#items ' + map[id]).forEach(s => { if(!s.value) s.value = e.target.value; });
-  });
-});
 
 /* ===== reconocimiento de cliente / país de la proforma ===== */
 // Quita acentos, puntuación y pasa a mayúsculas para poder comparar
@@ -299,17 +310,18 @@ function parseProforma(file){
 
       // extraer ítems: filas con CODE y Description no vacíos
       document.getElementById('items').innerHTML = '';
-      let count = 0;
+      let count = 0, reconocidos = 0;
       for(let r = hRow + 1; r < rows.length; r++){
         const row = rows[r];
         const sku = row[cols.sku], desc = row[cols.desc];
         if(sku === '' || desc === '') { if(count) break; else continue; }
-        addItem({
+        const tr = addItem({
           sku: String(sku).replace(/\.0$/,''),
           descripcion: String(desc).trim(),
           qty: Number(row[cols.qty]) || '',
           fobVta: Number(row[cols.price]) || ''
         });
+        if(tr.querySelector('.i-cat').value) reconocidos++;
         count++;
       }
 
@@ -358,6 +370,7 @@ function parseProforma(file){
       info.textContent = `✓ ${file.name} — ${count} ítem(s)` +
         (detectado.length ? ' · ' + detectado.join(' · ') : '') + '.';
       const warn = document.getElementById('parseWarn');
+      if(count - reconocidos > 0) pendiente.push(`${count - reconocidos} ítem(s) sin Categoría/Licencia/Sello (SKU nuevo)`);
       if(pendiente.length){
         warn.style.display = 'block';
         warn.textContent = '⚠ Completá a mano: ' + pendiente.join(' · ');
@@ -398,7 +411,7 @@ async function submitAll(){
   });
   if(!items.length) return showMsg('err', 'Agregá al menos un ítem.');
   const inc = items.find(i => !i.qty || !i.fobVta || !i.categoria);
-  if(inc) return showMsg('err', 'Todos los ítems necesitan Categoría, Cantidad y FOB Vta.');
+  if(inc) return showMsg('err', `Falta Categoría, Cantidad o FOB Vta en el ítem ${inc.sku || inc.descripcion}.`);
 
   const btn = document.getElementById('send');
   btn.classList.add('loading'); btn.textContent = 'Cargando…';
@@ -416,6 +429,7 @@ async function submitAll(){
     document.getElementById('parseWarn').style.display = 'none';
     document.querySelectorAll('.auto').forEach(el => el.classList.remove('auto'));
     fileInput.value = '';
+    addItem();
     recalc();
   }catch(err){
     showMsg('err', 'Error al cargar: ' + err.message);
