@@ -23,6 +23,12 @@
   .grid{display:grid; gap:14px;}
   .g4{grid-template-columns:repeat(4,1fr);}
   @media(max-width:760px){.g4{grid-template-columns:1fr 1fr;}}
+  /* login */
+  #login{position:fixed; inset:0; background:var(--bg); z-index:50; display:flex; align-items:center; justify-content:center;}
+  #login .box{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:34px; width:min(360px, 90vw); text-align:center;}
+  #login h2{margin-bottom:6px;}
+  #login p{color:var(--muted); font-size:.9rem; margin-bottom:18px;}
+  #loginErr{color:#991b1b; font-size:.88rem; margin-top:10px; display:none;}
   /* dropzone */
   #drop{border:2px dashed #cbd5e1; border-radius:12px; padding:34px; text-align:center; cursor:pointer; transition:.15s; background:#fafbfc;}
   #drop.over{border-color:var(--brand); background:#fff5f4;}
@@ -53,6 +59,18 @@
 </style>
 </head>
 <body>
+
+<!-- LOGIN -->
+<div id="login">
+  <div class="box">
+    <h2>Carga de Proforma</h2>
+    <p>Ingresá la contraseña para continuar</p>
+    <input type="password" id="passInput" placeholder="Contraseña" autofocus>
+    <button class="btn btn-brand" style="width:100%; margin-top:12px" onclick="doLogin()">Entrar</button>
+    <div id="loginErr"></div>
+  </div>
+</div>
+
 <div class="wrap">
   <h1>Carga de Proforma Invoice</h1>
   <p class="sub">Subí la proforma o cargá los ítems a mano. Los datos se agregan solos al Mooving Dashboard.</p>
@@ -112,33 +130,70 @@
 <script>
 /* ================== CONFIGURACIÓN ================== */
 const API_URL = 'https://script.google.com/macros/s/AKfycbzivd8gLTyw7eCfm_4lOLD8JmPy-7pH8V5ZXy5xeF6yiWMjGDKY_rBfg8_Ruh0_a7wi/exec';
-const TOKEN   = 'mooving2026'; // debe coincidir con Code.gs
+/* La contraseña NO está en este archivo: la valida el Apps Script. */
 /* =================================================== */
 
+let PASS  = sessionStorage.getItem('mv_pass') || '';
 let LISTS = { clientes:[], paises:[], categorias:[], licencias:[], sellos:[] };
 let SKUS  = {};   // SKU → [Categoría, Licencia, Sello, Descripción]
+
+// ---------- login ----------
+function showLogin(err){
+  document.getElementById('login').style.display = 'flex';
+  const e = document.getElementById('loginErr');
+  if(err){ e.style.display = 'block'; e.textContent = err; }
+  else e.style.display = 'none';
+  setTimeout(() => document.getElementById('passInput').focus(), 50);
+}
+function hideLogin(){
+  document.getElementById('login').style.display = 'none';
+}
+async function doLogin(){
+  const p = document.getElementById('passInput').value;
+  if(!p) return;
+  PASS = p;
+  const ok = await loadLists();
+  if(ok){
+    sessionStorage.setItem('mv_pass', PASS);
+    hideLogin();
+  } else {
+    PASS = '';
+    sessionStorage.removeItem('mv_pass');
+  }
+}
+document.getElementById('passInput').addEventListener('keydown', e => {
+  if(e.key === 'Enter') doLogin();
+});
 
 // ---------- cargar listas y catálogo desde el Sheet ----------
 async function loadLists(){
   const badge = document.getElementById('listState');
   try{
-    const res = await fetch(API_URL);
+    const res = await fetch(API_URL + '?pass=' + encodeURIComponent(PASS));
     const data = await res.json();
-    if(!data.ok) throw new Error(data.error);
+    if(!data.ok){
+      if(data.error === 'AUTH'){
+        showLogin(document.getElementById('passInput').value ? 'Contraseña incorrecta' : '');
+        badge.textContent = 'esperando contraseña';
+        return false;
+      }
+      throw new Error(data.error);
+    }
     LISTS = data.lists;
     SKUS  = data.skus || {};
     fillSelect('cliente', LISTS.clientes, true);
     fillSelect('pais', LISTS.paises, true);
-    // refrescar filas ya creadas
     document.querySelectorAll('#items tr').forEach(tr => {
       tr.querySelectorAll('select').forEach(refreshRowSelect);
       applySku_(tr);
     });
     badge.textContent = `listas actualizadas · ${Object.keys(SKUS).length} SKU en catálogo`;
     badge.style.background = '#f0fdf4'; badge.style.color = '#166534';
+    return true;
   }catch(e){
     badge.textContent = 'no se pudieron cargar las listas';
     badge.style.background = '#fef2f2'; badge.style.color = '#991b1b';
+    return false;
   }
 }
 function fillSelect(id, opts, empty){
@@ -154,7 +209,6 @@ function refreshRowSelect(sel){
 }
 
 // ---------- autocompletado por SKU ----------
-// Busca el SKU en el histórico y completa Categoría / Licencia / Sello
 function applySku_(tr, force){
   const sku = tr.querySelector('.i-sku').value.trim().replace(/\.0$/,'');
   const cat = tr.querySelector('.i-cat'), lic = tr.querySelector('.i-lic'), sel = tr.querySelector('.i-sello');
@@ -182,7 +236,7 @@ function addItem(data = {}){
     <td><input class="i-desc" value="${esc(data.descripcion ?? '')}"></td>
     <td><select class="i-cat" data-kind="categorias"></select></td>
     <td><input class="i-qty" type="number" min="0" value="${data.qty ?? ''}"></td>
-    <td><input class="i-price" type="number" step="0.01" min="0" value="${data.fobVta ?? ''}"></td>
+    <td><input class="i-price" type="number" step="0.0001" min="0" value="${data.fobVta ?? ''}"></td>
     <td><select class="i-lic" data-kind="licencias"></select></td>
     <td><select class="i-sello" data-kind="sellos"></select></td>
     <td class="subtotal i-sub">—</td>
@@ -192,7 +246,6 @@ function addItem(data = {}){
   applySku_(tr);                                       // completa según el SKU
   tr.querySelector('.i-sku').addEventListener('change', () => applySku_(tr, true));
   tr.querySelectorAll('input').forEach(i => i.addEventListener('input', recalc));
-  // si el usuario elige a mano, se apaga el resaltado verde
   tr.querySelectorAll('select').forEach(s => s.addEventListener('change', () => s.classList.remove('auto')));
   recalc();
   return tr;
@@ -211,27 +264,39 @@ function recalc(){
 }
 function fmt(n){ return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
-/* ===== reconocimiento de cliente / país de la proforma ===== */
-// Quita acentos, puntuación y pasa a mayúsculas para poder comparar
-function norm_(s){
-  return String(s).toUpperCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g,'')
-    .replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+/* ===== utilidades de lectura de la proforma ===== */
+// Normaliza un texto de encabezado/etiqueta: minúsculas, sin acentos ni puntuación
+function normLabel_(s){
+  return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/[^a-z0-9 /]/g,' ').replace(/\s+/g,' ').trim();
 }
-// Palabras societarias que no ayudan a identificar al cliente
-const STOP_ = ['INC','SA','SRL','SAS','LTD','LTDA','LLC','CORP','COMPANY','GROUP','THE','AND','DEL','BOOKS','MUSIC','STORE','STORES'];
-// Países que en la proforma vienen en inglés
-const PAIS_EN_ = {
-  'SPAIN':'ESPAÑA', 'SOUTH AFRICA':'SUDÁFRICA', 'DOMINICAN REPUBLIC':'REP DOMINICANA',
-  'DOMINICAN REP':'REP DOMINICANA', 'REPUBLICA DOMINICANA':'REP DOMINICANA'
+// Encabezados de la tabla de ítems aceptados, en español e inglés
+const SYN_ = {
+  sku:   ['code','codigo','cod','sku','item','item code','articulo','art','referencia','ref'],
+  desc:  ['description','descripcion','producto','detalle','concepto'],
+  qty:   ['qty','quantity','cantidad','cant','qty final','pcs'],
+  price: ['unit price','precio unitario','precio unit','unit cost','precio','p unitario','fob','fob unit']
 };
-// Busca una etiqueta (ej. "Customer") y devuelve el primer valor no vacío a su derecha
+// Ubica la fila de encabezados de la tabla de ítems
+function findHeader_(rows){
+  for(let r = 0; r < Math.min(rows.length, 40); r++){
+    const cells = (rows[r] || []).map(normLabel_);
+    const idx = {};
+    cells.forEach((c, i) => {
+      if(!c) return;
+      for(const k in SYN_) if(idx[k] === undefined && SYN_[k].includes(c)) idx[k] = i;
+    });
+    if(idx.sku !== undefined && idx.desc !== undefined && idx.qty !== undefined) return { hRow:r, cols:idx };
+  }
+  return null;
+}
+// Busca una etiqueta (ej. "Customer" o "Date / Fecha") y devuelve el valor a su derecha
 function findLabelValue_(rows, maxRow, labels){
   for(let r = 0; r < maxRow; r++){
     const row = rows[r] || [];
     for(let c = 0; c < row.length; c++){
-      const lab = String(row[c]).trim().toLowerCase().replace(/[:\s]+$/,'');
-      if(labels.includes(lab)){
+      const parts = normLabel_(row[c]).split('/').map(s => s.trim());
+      if(parts.some(p => labels.includes(p))){
         for(let k = c + 1; k < row.length; k++){
           const v = row[k];
           if(v !== '' && v !== null && v !== undefined) return v;
@@ -241,8 +306,42 @@ function findLabelValue_(rows, maxRow, labels){
   }
   return '';
 }
-// Elige de la lista del Sheet la opción que mejor coincide con el texto de la proforma
-// Ej: "Indigo Books & Music Inc." → "INDIGO"
+// Acepta fecha como número de Excel, objeto Date o texto (dd/mm/aaaa, aaaa-mm-dd)
+function toDate_(v){
+  if(v instanceof Date) return { y:v.getFullYear(), m:v.getMonth()+1, d:v.getDate() };
+  if(typeof v === 'number'){ const d = XLSX.SSF.parse_date_code(v); return d ? { y:d.y, m:d.m, d:d.d } : null; }
+  const s = String(v).trim();
+  let m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/);
+  if(m){ let y = +m[3]; if(y < 100) y += 2000; return { y, m:+m[2], d:+m[1] }; }
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return { y:+m[1], m:+m[2], d:+m[3] };
+  return null;
+}
+// N° de proforma: primero una celda tipo "Nº XXXX", si no un número largo
+function findNro_(rows, hRow){
+  for(let r = 0; r < hRow; r++){
+    for(const c of (rows[r] || [])){
+      const m = String(c).trim().match(/^\s*(?:n[º°o]\.?|nro\.?|number|invoice\s*n[º°o]?)\s*:?\s*(.+)$/i);
+      if(m && m[1].trim().length >= 4) return m[1].trim();
+    }
+  }
+  for(let r = 0; r < hRow; r++)
+    for(const c of (rows[r] || []))
+      if(typeof c === 'number' && c >= 1e5 && c < 1e12 && Number.isInteger(c)) return String(c);
+  return '';
+}
+
+/* ===== reconocimiento de cliente / país ===== */
+function norm_(s){
+  return String(s).toUpperCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+}
+const STOP_ = ['INC','SA','SAS','SPA','SRL','LTD','LTDA','LLC','CORP','COMPANY','GROUP','THE','AND','DEL','BOOKS','MUSIC','STORE','STORES'];
+const PAIS_EN_ = {
+  'SPAIN':'ESPAÑA', 'SOUTH AFRICA':'SUDÁFRICA', 'DOMINICAN REPUBLIC':'REP DOMINICANA',
+  'DOMINICAN REP':'REP DOMINICANA', 'REPUBLICA DOMINICANA':'REP DOMINICANA'
+};
 function bestMatch_(text, list){
   const t = norm_(text);
   if(!t || !list || !list.length) return '';
@@ -254,13 +353,13 @@ function bestMatch_(text, list){
     if(n === t){
       s = 100;
     } else if(new RegExp('\\b' + n.replace(/ /g,'\\s+') + '\\b').test(t)){
-      s = 80 + n.length;            // la opción aparece completa dentro del texto
+      s = 80 + n.length;
     } else if(new RegExp('\\b' + t.replace(/ /g,'\\s+') + '\\b').test(n)){
-      s = 70 + t.length;            // el texto es parte de la opción
+      s = 70 + t.length;
     } else {
       const toks = n.split(' ').filter(w => w.length >= 4 && !STOP_.includes(w));
       const hits = toks.filter(w => new RegExp('\\b' + w + '\\b').test(t)).length;
-      if(hits) s = 40 + hits * 10;  // coincidencia por palabras sueltas
+      if(hits) s = 40 + hits * 10;
     }
     if(s > score){ score = s; best = item; }
   });
@@ -270,7 +369,7 @@ function setAuto_(id, value){
   const el = document.getElementById(id);
   if(!value) return false;
   el.value = value;
-  if(el.value !== value) return false;   // no existe en la lista
+  if(el.value !== value) return false;
   el.classList.add('auto');
   return true;
 }
@@ -291,24 +390,11 @@ function parseProforma(file){
       const sh = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(sh, {header:1, raw:true, defval:''});
 
-      // ubicar fila de encabezados (contiene CODE y Qty)
-      let hRow = -1, cols = {};
-      for(let r = 0; r < Math.min(rows.length, 30); r++){
-        const cells = rows[r].map(c => String(c).trim().toLowerCase());
-        if(cells.includes('code') && cells.some(c => c === 'qty')){
-          hRow = r;
-          cells.forEach((c, i) => {
-            if(c === 'code') cols.sku = i;
-            if(c === 'description') cols.desc = i;
-            if(c === 'qty') cols.qty = i;
-            if(c === 'unit price') cols.price = i;
-          });
-          break;
-        }
-      }
-      if(hRow < 0) throw new Error('No encontré la tabla de ítems (encabezados CODE / Qty).');
+      const head = findHeader_(rows);
+      if(!head) throw new Error('No encontré la tabla de ítems. Necesita una fila de encabezados con Código/Code, Descripción/Description y Cantidad/Qty.');
+      const hRow = head.hRow, cols = head.cols;
 
-      // extraer ítems: filas con CODE y Description no vacíos
+      // extraer ítems
       document.getElementById('items').innerHTML = '';
       let count = 0, reconocidos = 0;
       for(let r = hRow + 1; r < rows.length; r++){
@@ -316,10 +402,10 @@ function parseProforma(file){
         const sku = row[cols.sku], desc = row[cols.desc];
         if(sku === '' || desc === '') { if(count) break; else continue; }
         const tr = addItem({
-          sku: String(sku).replace(/\.0$/,''),
+          sku: String(sku).replace(/\.0$/,'').trim(),
           descripcion: String(desc).trim(),
           qty: Number(row[cols.qty]) || '',
-          fobVta: Number(row[cols.price]) || ''
+          fobVta: cols.price !== undefined ? (Number(row[cols.price]) || '') : ''
         });
         if(tr.querySelector('.i-cat').value) reconocidos++;
         count++;
@@ -327,42 +413,30 @@ function parseProforma(file){
 
       const detectado = [], pendiente = [];
 
-      // --- Cliente: etiqueta "Customer" ---
+      // --- Cliente ---
       const rawCliente = findLabelValue_(rows, hRow, ['customer','cliente','sold to','bill to','buyer']);
       const cliente = bestMatch_(rawCliente, LISTS.clientes);
       if(setAuto_('cliente', cliente)) detectado.push('Cliente: ' + cliente);
       else if(rawCliente) pendiente.push(`Cliente ("${String(rawCliente).trim()}" no coincide con la lista)`);
 
-      // --- País: etiqueta "Country" ---
-      let rawPais = String(findLabelValue_(rows, hRow, ['country','pais','país'])).trim();
-      const paisEn = PAIS_EN_[norm_(rawPais)];
-      const pais = bestMatch_(paisEn || rawPais, LISTS.paises);
+      // --- País ---
+      const rawPais = String(findLabelValue_(rows, hRow, ['country','pais'])).trim();
+      const pais = bestMatch_(PAIS_EN_[norm_(rawPais)] || rawPais, LISTS.paises);
       if(setAuto_('pais', pais)) detectado.push('País: ' + pais);
       else if(rawPais) pendiente.push(`País ("${rawPais}" no coincide con la lista)`);
 
-      // --- N° de proforma: número largo antes de la tabla ---
-      outer:
-      for(let r = 0; r < hRow; r++){
-        for(const c of rows[r]){
-          if(typeof c === 'number' && c >= 1e5 && c < 1e12 && Number.isInteger(c)){
-            document.getElementById('nroProforma').value = c;
-            detectado.push('N° ' + c);
-            break outer;
-          }
-        }
-      }
+      // --- N° de proforma ---
+      const nro = findNro_(rows, hRow);
+      if(nro){ document.getElementById('nroProforma').value = nro; detectado.push('N° ' + nro); }
 
-      // --- Fecha: etiqueta "Date" → también define el Quarter ---
-      const rawFecha = findLabelValue_(rows, hRow, ['date','fecha','invoice date']);
-      if(typeof rawFecha === 'number'){
-        const d = XLSX.SSF.parse_date_code(rawFecha);
-        if(d){
-          document.getElementById('fecha').value =
-            `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
-          document.getElementById('fecha').classList.add('auto');
-          setAuto_('quarter', 'Q' + (Math.floor((d.m - 1) / 3) + 1));
-          detectado.push(`Fecha: ${String(d.d).padStart(2,'0')}/${String(d.m).padStart(2,'0')}/${d.y}`);
-        }
+      // --- Fecha → también define el Quarter ---
+      const d = toDate_(findLabelValue_(rows, hRow, ['date','fecha','invoice date','fecha factura']));
+      if(d){
+        document.getElementById('fecha').value =
+          `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+        document.getElementById('fecha').classList.add('auto');
+        setAuto_('quarter', 'Q' + (Math.floor((d.m - 1) / 3) + 1));
+        detectado.push(`Fecha: ${String(d.d).padStart(2,'0')}/${String(d.m).padStart(2,'0')}/${d.y}`);
       }
 
       const info = document.getElementById('parseInfo');
@@ -419,10 +493,13 @@ async function submitAll(){
     const res = await fetch(API_URL, {
       method: 'POST',
       headers: {'Content-Type': 'text/plain;charset=utf-8'}, // evita preflight CORS
-      body: JSON.stringify({ token: TOKEN, rows: items })
+      body: JSON.stringify({ pass: PASS, rows: items })
     });
     const data = await res.json();
-    if(!data.ok) throw new Error(data.error);
+    if(!data.ok){
+      if(data.error === 'AUTH'){ showLogin('La sesión expiró, ingresá la contraseña de nuevo.'); throw new Error('contraseña inválida'); }
+      throw new Error(data.error);
+    }
     showMsg('ok', `✓ Se cargaron ${data.added} fila(s) en el Dashboard (desde la fila ${data.firstRow}).`);
     document.getElementById('items').innerHTML = '';
     document.getElementById('parseInfo').style.display = 'none';
@@ -445,8 +522,14 @@ function showMsg(cls, text){
 
 // ---------- init ----------
 document.getElementById('fecha').valueAsDate = new Date();
-loadLists();
 addItem();
+if(PASS){
+  hideLogin();
+  loadLists();
+} else {
+  showLogin();
+  document.getElementById('listState').textContent = 'esperando contraseña';
+}
 </script>
 </body>
 </html>
