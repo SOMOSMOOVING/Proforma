@@ -101,11 +101,7 @@
       <input type="file" id="fileNP" accept=".xls,.xlsx,.xlsm" hidden>
       <div id="npInfo" class="parseInfo"></div>
       <div id="npWarn" class="parseWarn"></div>
-      <div id="npSheets" style="margin-top:12px; display:none">
-        <label>Hojas detectadas</label>
-        <div id="npSheetList"></div>
-        <p class="hint">Se incluyen solo los ítems con cantidad mayor a 0. Si la nota no trae el puerto por ítem (formato viejo), elegilo por hoja acá arriba.</p>
-      </div>
+      <p class="hint">Se incluyen solo los ítems con cantidad mayor a 0. El puerto se puede cambiar por ítem en la vista previa.</p>
     </div>
 
     <div class="card">
@@ -141,7 +137,12 @@
             <th style="width:80px;text-align:right">Cantidad</th><th style="width:110px;text-align:right">Precio Unit.</th>
             <th style="width:110px;text-align:right">Monto Total</th><th style="width:85px;text-align:right">Qty/Carton</th>
             <th style="width:80px;text-align:right">Cartons</th><th style="width:75px;text-align:right">CBM</th>
-            <th style="width:90px">Puerto</th>
+            <th style="width:120px">Puerto
+              <select id="pfPuertoAll" onchange="setPuertoAll(this.value); this.selectedIndex=0;"
+                      style="width:100%; margin-top:4px; padding:3px 6px; font-size:.75rem; text-transform:none; font-weight:400;">
+                <option value="">aplicar a todos…</option>
+              </select>
+            </th>
           </tr></thead>
           <tbody id="pfItems"><tr><td colspan="9" style="color:var(--muted); padding:14px 6px">Subí una nota de pedido para ver los ítems.</td></tr></tbody>
         </table>
@@ -170,16 +171,12 @@
     <div class="card">
       <h2>2 · Datos generales <span id="listState" class="badge">cargando listas…</span></h2>
       <div class="grid g4">
-        <div><label>Fecha</label><input type="date" id="fecha"></div>
         <div><label>Cliente</label><select id="cliente"></select></div>
         <div><label>País</label><select id="pais"></select></div>
-        <div><label>FC Samedy</label><input type="text" id="fcSamedy" placeholder="Ej: A 1398"></div>
-      </div>
-      <div class="grid g4" style="margin-top:14px">
-        <div><label>Quarter</label><select id="quarter"><option value=""></option><option>Q1</option><option>Q2</option><option>Q3</option><option>Q4</option></select></div>
         <div><label>Temporada</label><input type="text" id="temporada" placeholder="Ej: COLORING"></div>
         <div><label>N° Proforma</label><input type="text" id="nroProforma" placeholder="Se completa solo al subir el archivo"></div>
       </div>
+      <p class="hint">Fecha, Quarter y FC Samedy se completan a mano en el Sheet, igual que ETD y ETA.</p>
     </div>
 
     <div class="card">
@@ -571,14 +568,6 @@ function applyProforma_(p, file){
   const nro = findNro_(rows, hRow);
   if(nro){ document.getElementById('nroProforma').value = nro; detectado.push('N° ' + nro); }
 
-  const d = toDate_(findLabelValue_(rows, hRow, ['date','fecha','invoice date','fecha factura']));
-  if(d){
-    document.getElementById('fecha').value =
-      `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
-    document.getElementById('fecha').classList.add('auto');
-    setAuto_('quarter', 'Q' + (Math.floor((d.m - 1) / 3) + 1));
-    detectado.push(`Fecha: ${String(d.d).padStart(2,'0')}/${String(d.m).padStart(2,'0')}/${d.y}`);
-  }
 
   const info = document.getElementById('parseInfo');
   info.style.display = 'block';
@@ -598,11 +587,11 @@ async function submitAll(){
   msg.className = 'msg'; msg.style.display = 'none';
   const g = id => document.getElementById(id).value.trim();
   const general = {
-    fecha: g('fecha'), cliente: g('cliente'), pais: g('pais'),
-    fcSamedy: g('fcSamedy'), quarter: g('quarter'), temporada: g('temporada')
+    fecha: '', cliente: g('cliente'), pais: g('pais'),
+    fcSamedy: '', quarter: '', temporada: g('temporada')
   };
-  if(!general.fecha || !general.cliente || !general.pais){
-    return showMsg('msg','err', 'Completá al menos Fecha, Cliente y País.');
+  if(!general.cliente || !general.pais){
+    return showMsg('msg','err', 'Completá al menos Cliente y País.');
   }
   const items = [];
   document.querySelectorAll('#items tr').forEach(tr => {
@@ -734,39 +723,41 @@ function applyNota_(n, file){
   const warn = document.getElementById('npWarn');
   if(noPort.length){
     warn.style.display = 'block';
-    warn.textContent = '⚠ Formato viejo sin puerto por ítem: elegí el puerto de ' + noPort.map(s => s.name).join(', ') + '.';
+    warn.textContent = '⚠ La nota no trae el puerto (' + noPort.map(s => s.name).join(', ') + '): quedó Ningbo por defecto, cambialo en la columna Puerto.';
   } else warn.style.display = 'none';
   // sugerir cliente y país si vienen en el nombre del archivo o quedaron vacíos
   if(!document.getElementById('pfCliente').value) document.getElementById('pfCliente').focus();
 }
 
-function renderSheetList(){
-  const box = document.getElementById('npSheets');
-  const list = document.getElementById('npSheetList');
-  box.style.display = 'block';
-  list.innerHTML = '';
-  NP.sheets.forEach((s, i) => {
-    const div = document.createElement('div');
-    div.className = 'sheetRow';
-    div.innerHTML = `<span class="name">${esc(s.name)}</span>
-      <span class="count">${s.items.length} ítem(s)</span>` +
-      (s.hasPort
-        ? `<span class="count" style="color:var(--ok)">puerto por ítem ✓</span>`
-        : `<select onchange="NP.sheets[${i}].port=this.value; renderPreview()">` +
-            PUERTOS.map(p => `<option${p === s.port ? ' selected' : ''}>${p}</option>`).join('') +
-          `</select>`);
-    list.appendChild(div);
-  });
-}
+function renderSheetList(){ /* la elección de puerto ahora es por ítem en la vista previa */ }
 
 function allItems(){
   const out = [];
   if(!NP) return out;
-  NP.sheets.forEach(s => s.items.forEach(it => out.push({ ...it, puerto: it.puerto || s.port })));
+  NP.sheets.forEach(s => s.items.forEach(it => out.push({ ...it, puerto: it.puerto || s.port || 'Ningbo' })));
   return out;
+}
+// Cambia el puerto de un ítem puntual (por su posición en la vista previa)
+function setPuerto(idx, val){
+  let i = 0;
+  for(const s of NP.sheets){
+    for(const it of s.items){
+      if(i === idx){ it.puerto = val; return; }
+      i++;
+    }
+  }
+}
+// Aplica un puerto a todos los ítems de una sola vez
+function setPuertoAll(val){
+  if(!val || !NP) return;
+  NP.sheets.forEach(s => { s.port = val; s.items.forEach(it => { it.puerto = val; }); });
+  renderPreview();
 }
 
 function renderPreview(){
+  const all = document.getElementById('pfPuertoAll');
+  if(all && all.options.length === 1)
+    all.innerHTML = '<option value="">aplicar a todos…</option>' + PUERTOS.map(p => `<option>${p}</option>`).join('');
   const tb = document.getElementById('pfItems');
   const items = allItems();
   if(!items.length){
@@ -776,7 +767,7 @@ function renderPreview(){
     return;
   }
   let tQty = 0, tMonto = 0, tCajas = 0, tCbm = 0;
-  tb.innerHTML = items.map(it => {
+  tb.innerHTML = items.map((it, idx) => {
     tQty += it.qty; tMonto += it.total; tCajas += Number(it.cajas) || 0; tCbm += it.cbm;
     return `<tr>
       <td>${esc(it.sku)}</td><td>${esc(it.desc)}</td>
@@ -786,7 +777,10 @@ function renderPreview(){
       <td class="num">${it.master || ''}</td>
       <td class="num">${it.cajas || ''}</td>
       <td class="num">${it.cbm ? it.cbm.toFixed(3) : ''}</td>
-      <td>${esc(it.puerto)}</td>
+      <td><select class="i-puerto" data-i="${idx}" onchange="setPuerto(${idx}, this.value)">${
+        PUERTOS.concat(it.puerto && !PUERTOS.includes(it.puerto) ? [it.puerto] : [])
+          .map(p => `<option${p === it.puerto ? ' selected' : ''}>${esc(p)}</option>`).join('')
+      }</select></td>
     </tr>`;
   }).join('');
   document.getElementById('pfCount').textContent =
@@ -948,7 +942,6 @@ async function genProforma(){
 }
 
 /* ================== INIT ================== */
-document.getElementById('fecha').valueAsDate = new Date();
 document.getElementById('pfFecha').valueAsDate = new Date();
 addItem();
 autoNro();
