@@ -439,80 +439,157 @@ drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); if(e.dataTransfer.files[0]) parseProforma(e.dataTransfer.files[0]); });
 fileInput.addEventListener('change', () => { if(fileInput.files[0]) parseProforma(fileInput.files[0]); });
 
-function parseProforma(file){
+function readWB_(file, cb){
   const reader = new FileReader();
   reader.onload = e => {
-    try{
-      const wb = XLSX.read(e.target.result, {type:'array', cellDates:false});
-      const sh = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sh, {header:1, raw:true, defval:''});
-
-      let hRow = -1, cols = {};
-      for(let r = 0; r < Math.min(rows.length, 40); r++){
-        const cells = (rows[r] || []).map(normLabel_);
-        const idx = {};
-        cells.forEach((c, i) => {
-          if(!c) return;
-          for(const k in SYN_) if(idx[k] === undefined && SYN_[k].includes(c)) idx[k] = i;
-        });
-        if(idx.sku !== undefined && idx.desc !== undefined && idx.qty !== undefined){ hRow = r; cols = idx; break; }
-      }
-      if(hRow < 0) throw new Error('No encontré la tabla de ítems. Necesita encabezados Código/Code, Descripción/Description y Cantidad/Qty.');
-
-      document.getElementById('items').innerHTML = '';
-      let count = 0, reconocidos = 0;
-      for(let r = hRow + 1; r < rows.length; r++){
-        const row = rows[r];
-        const sku = row[cols.sku], desc = row[cols.desc];
-        if(sku === '' || desc === '') { if(count) break; else continue; }
-        const tr = addItem({
-          sku: String(sku).replace(/\.0$/,'').trim(),
-          descripcion: String(desc).trim(),
-          qty: Number(row[cols.qty]) || '',
-          fobVta: cols.price !== undefined ? (Number(row[cols.price]) || '') : ''
-        });
-        if(tr.querySelector('.i-cat').value) reconocidos++;
-        count++;
-      }
-
-      const detectado = [], pendiente = [];
-      const rawCliente = findLabelValue_(rows, hRow, ['customer','cliente','sold to','bill to','buyer']);
-      const cliente = bestMatch_(rawCliente, LISTS.clientes);
-      if(setAuto_('cliente', cliente)) detectado.push('Cliente: ' + cliente);
-      else if(rawCliente) pendiente.push(`Cliente ("${String(rawCliente).trim()}" no coincide con la lista)`);
-
-      const rawPais = String(findLabelValue_(rows, hRow, ['country','pais'])).trim();
-      const pais = bestMatch_(PAIS_EN_[norm_(rawPais)] || rawPais, LISTS.paises);
-      if(setAuto_('pais', pais)) detectado.push('País: ' + pais);
-      else if(rawPais) pendiente.push(`País ("${rawPais}" no coincide con la lista)`);
-
-      const nro = findNro_(rows, hRow);
-      if(nro){ document.getElementById('nroProforma').value = nro; detectado.push('N° ' + nro); }
-
-      const d = toDate_(findLabelValue_(rows, hRow, ['date','fecha','invoice date','fecha factura']));
-      if(d){
-        document.getElementById('fecha').value =
-          `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
-        document.getElementById('fecha').classList.add('auto');
-        setAuto_('quarter', 'Q' + (Math.floor((d.m - 1) / 3) + 1));
-        detectado.push(`Fecha: ${String(d.d).padStart(2,'0')}/${String(d.m).padStart(2,'0')}/${d.y}`);
-      }
-
-      const info = document.getElementById('parseInfo');
-      info.style.display = 'block';
-      info.textContent = `✓ ${file.name} — ${count} ítem(s)` +
-        (detectado.length ? ' · ' + detectado.join(' · ') : '') + '.';
-      const warn = document.getElementById('parseWarn');
-      if(count - reconocidos > 0) pendiente.push(`${count - reconocidos} ítem(s) sin Categoría/Licencia/Sello (SKU nuevo)`);
-      if(pendiente.length){
-        warn.style.display = 'block';
-        warn.textContent = '⚠ Completá a mano: ' + pendiente.join(' · ');
-      } else warn.style.display = 'none';
-    }catch(err){
-      alert('No pude leer la proforma: ' + err.message + '\nPodés cargar los ítems a mano.');
-    }
+    try{ cb(XLSX.read(e.target.result, {type:'array', cellDates:false})); }
+    catch(err){ alert('No pude abrir el archivo: ' + err.message); }
   };
   reader.readAsArrayBuffer(file);
+}
+
+/* --- detección: ¿es una proforma? --- */
+function detectProforma_(wb){
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {header:1, raw:true, defval:''});
+  for(let r = 0; r < Math.min(rows.length, 40); r++){
+    const cells = (rows[r] || []).map(normLabel_);
+    const idx = {};
+    cells.forEach((c, i) => {
+      if(!c) return;
+      for(const k in SYN_) if(idx[k] === undefined && SYN_[k].includes(c)) idx[k] = i;
+    });
+    if(idx.sku !== undefined && idx.desc !== undefined && idx.qty !== undefined) return { rows, hRow:r, cols:idx };
+  }
+  return null;
+}
+
+/* --- detección: ¿es una nota de pedido? --- */
+function detectNota_(wb){
+  const sheets = [];
+  let etd = '';
+  wb.SheetNames.forEach(name => {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, raw:true, defval:''});
+    if(normLabel_(name).startsWith('resumen')){
+      for(const row of rows){
+        for(let c = 0; c < (row||[]).length; c++){
+          const m = String(row[c]).match(/^\s*ETD\s*:?\s*(.*)$/i);
+          if(m) etd = (m[1] || String(row[c+1] || '')).trim();
+        }
+      }
+      return;
+    }
+    let hRow = -1, cols = {};
+    for(let r = 0; r < Math.min(rows.length, 15); r++){
+      const cells = (rows[r] || []).map(normLabel_);
+      const idx = {};
+      cells.forEach((c, i) => {
+        if(!c) return;
+        if(idx.sku === undefined && ['sku','codigo','code'].includes(c)) idx.sku = i;
+        if(idx.desc === undefined && ['descripcion','description'].includes(c)) idx.desc = i;
+        if(idx.master === undefined && ['master'].includes(c)) idx.master = i;
+        if(idx.fob === undefined && ['fob','precio unitario','unit price'].includes(c)) idx.fob = i;
+        if(idx.qty === undefined && ['cantidad','cantidad total','qty'].includes(c)) idx.qty = i;
+        if(idx.total === undefined && ['total','valor total','monto total'].includes(c)) idx.total = i;
+        if(idx.cajas === undefined && ['cajas','total cartons','cartons'].includes(c)) idx.cajas = i;
+        if(['cbm','cbm total'].includes(c)) idx.cbm = i;   // el último CBM de la fila es el total
+        if(idx.puerto === undefined && ['puerto','port','departure port'].includes(c)) idx.puerto = i;
+      });
+      if(idx.sku !== undefined && idx.desc !== undefined && idx.qty !== undefined && idx.fob !== undefined){
+        hRow = r; cols = idx; break;
+      }
+    }
+    if(hRow < 0) return;
+    const items = [];
+    for(let r = hRow + 1; r < rows.length; r++){
+      const row = rows[r] || [];
+      const sku = row[cols.sku];
+      if(sku === '' || sku === null || sku === undefined) continue;
+      const qty = Number(row[cols.qty]) || 0;
+      if(qty <= 0) continue;
+      const fob = Number(row[cols.fob]) || 0;
+      items.push({
+        sku: String(sku).replace(/\.0$/,'').trim(),
+        desc: String(row[cols.desc] || '').trim(),
+        qty, fob,
+        total: cols.total !== undefined && Number(row[cols.total]) ? Number(row[cols.total]) : qty * fob,
+        master: cols.master !== undefined ? (Number(row[cols.master]) || '') : '',
+        cajas: cols.cajas !== undefined ? (Number(row[cols.cajas]) || '') : '',
+        cbm: cols.cbm !== undefined ? (Number(row[cols.cbm]) || 0) : 0,
+        puerto: cols.puerto !== undefined ? String(row[cols.puerto] || '').trim() : ''
+      });
+    }
+    if(items.length) sheets.push({ name, hasPort: cols.puerto !== undefined, port:'Ningbo', items });
+  });
+  return sheets.length ? { sheets, etd } : null;
+}
+
+/* ===== solapa 1: cargar proforma ===== */
+function parseProforma(file){
+  readWB_(file, wb => {
+    const p = detectProforma_(wb);
+    if(p) return applyProforma_(p, file);
+    const n = detectNota_(wb);
+    if(n){                                    // se soltó una nota de pedido en la solapa equivocada
+      applyNota_(n, file);
+      switchTab(2);
+      showMsg('pfMsg','ok', `Eso era una nota de pedido, así que te traje a esta solapa: ${file.name} cargado.`);
+      return;
+    }
+    alert('No pude leer el archivo.\n\nSi es una proforma, necesita una fila de encabezados con Código/Code, Descripción/Description y Cantidad/Qty.\nSi es una nota de pedido, usá la solapa "Generar Proforma".');
+  });
+}
+
+function applyProforma_(p, file){
+  const { rows, hRow, cols } = p;
+  document.getElementById('items').innerHTML = '';
+  let count = 0, reconocidos = 0;
+  for(let r = hRow + 1; r < rows.length; r++){
+    const row = rows[r];
+    const sku = row[cols.sku], desc = row[cols.desc];
+    if(sku === '' || desc === ''){ if(count) break; else continue; }
+    const tr = addItem({
+      sku: String(sku).replace(/\.0$/,'').trim(),
+      descripcion: String(desc).trim(),
+      qty: Number(row[cols.qty]) || '',
+      fobVta: cols.price !== undefined ? (Number(row[cols.price]) || '') : ''
+    });
+    if(tr.querySelector('.i-cat').value) reconocidos++;
+    count++;
+  }
+
+  const detectado = [], pendiente = [];
+  const rawCliente = findLabelValue_(rows, hRow, ['customer','cliente','sold to','bill to','buyer']);
+  const cliente = bestMatch_(rawCliente, LISTS.clientes);
+  if(setAuto_('cliente', cliente)) detectado.push('Cliente: ' + cliente);
+  else if(rawCliente) pendiente.push(`Cliente ("${String(rawCliente).trim()}" no coincide con la lista)`);
+
+  const rawPais = String(findLabelValue_(rows, hRow, ['country','pais'])).trim();
+  const pais = bestMatch_(PAIS_EN_[norm_(rawPais)] || rawPais, LISTS.paises);
+  if(setAuto_('pais', pais)) detectado.push('País: ' + pais);
+  else if(rawPais) pendiente.push(`País ("${rawPais}" no coincide con la lista)`);
+
+  const nro = findNro_(rows, hRow);
+  if(nro){ document.getElementById('nroProforma').value = nro; detectado.push('N° ' + nro); }
+
+  const d = toDate_(findLabelValue_(rows, hRow, ['date','fecha','invoice date','fecha factura']));
+  if(d){
+    document.getElementById('fecha').value =
+      `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+    document.getElementById('fecha').classList.add('auto');
+    setAuto_('quarter', 'Q' + (Math.floor((d.m - 1) / 3) + 1));
+    detectado.push(`Fecha: ${String(d.d).padStart(2,'0')}/${String(d.m).padStart(2,'0')}/${d.y}`);
+  }
+
+  const info = document.getElementById('parseInfo');
+  info.style.display = 'block';
+  info.textContent = `✓ ${file.name} — ${count} ítem(s)` +
+    (detectado.length ? ' · ' + detectado.join(' · ') : '') + '.';
+  const warn = document.getElementById('parseWarn');
+  if(count - reconocidos > 0) pendiente.push(`${count - reconocidos} ítem(s) sin Categoría/Licencia/Sello (SKU nuevo)`);
+  if(pendiente.length){
+    warn.style.display = 'block';
+    warn.textContent = '⚠ Completá a mano: ' + pendiente.join(' · ');
+  } else warn.style.display = 'none';
 }
 
 /* ===== solapa 1: envío ===== */
@@ -628,91 +705,39 @@ dropNP.addEventListener('dragleave', () => dropNP.classList.remove('over'));
 dropNP.addEventListener('drop', e => { e.preventDefault(); dropNP.classList.remove('over'); if(e.dataTransfer.files[0]) parseNota(e.dataTransfer.files[0]); });
 fileNP.addEventListener('change', () => { if(fileNP.files[0]) parseNota(fileNP.files[0]); });
 
+/* ===== solapa 2: cargar nota de pedido ===== */
 function parseNota(file){
-  const reader = new FileReader();
-  reader.onload = e => {
-    try{
-      const wb = XLSX.read(e.target.result, {type:'array', cellDates:false});
-      const sheets = [];
-      let etd = '';
-      wb.SheetNames.forEach(name => {
-        const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, raw:true, defval:''});
-        if(normLabel_(name).startsWith('resumen')){
-          // buscar ETD informativo
-          for(const row of rows){
-            for(let c = 0; c < (row||[]).length; c++){
-              const m = String(row[c]).match(/^\s*ETD\s*:?\s*(.*)$/i);
-              if(m){ etd = (m[1] || String(row[c+1]||'')).trim(); }
-            }
-          }
-          return;
-        }
-        // encabezados de hoja de producto
-        let hRow = -1, cols = {};
-        for(let r = 0; r < Math.min(rows.length, 15); r++){
-          const cells = (rows[r] || []).map(normLabel_);
-          const idx = {};
-          cells.forEach((c, i) => {
-            if(!c) return;
-            if(idx.sku === undefined && ['sku','codigo','code'].includes(c)) idx.sku = i;
-            if(idx.desc === undefined && ['descripcion','description'].includes(c)) idx.desc = i;
-            if(idx.master === undefined && ['master'].includes(c)) idx.master = i;
-            if(idx.fob === undefined && ['fob','precio unitario','unit price'].includes(c)) idx.fob = i;
-            if(idx.qty === undefined && ['cantidad','cantidad total','qty'].includes(c)) idx.qty = i;
-            if(idx.total === undefined && ['total','valor total','monto total'].includes(c)) idx.total = i;
-            if(idx.cajas === undefined && ['cajas','total cartons','cartons'].includes(c)) idx.cajas = i;
-            if(['cbm','cbm total'].includes(c)) idx.cbm = i; // el ÚLTIMO cbm de la fila es el total
-            if(idx.puerto === undefined && ['puerto','port','departure port'].includes(c)) idx.puerto = i;
-          });
-          if(idx.sku !== undefined && idx.desc !== undefined && idx.qty !== undefined && idx.fob !== undefined){
-            hRow = r; cols = idx; break;
-          }
-        }
-        if(hRow < 0) return; // hoja sin tabla de pedido
-        const items = [];
-        for(let r = hRow + 1; r < rows.length; r++){
-          const row = rows[r] || [];
-          const sku = row[cols.sku];
-          if(sku === '' || sku === null || sku === undefined) continue;
-          const qty = Number(row[cols.qty]) || 0;
-          if(qty <= 0) continue;
-          const fob = Number(row[cols.fob]) || 0;
-          items.push({
-            sku: String(sku).replace(/\.0$/,'').trim(),
-            desc: String(row[cols.desc] || '').trim(),
-            qty,
-            fob,
-            total: cols.total !== undefined && Number(row[cols.total]) ? Number(row[cols.total]) : qty * fob,
-            master: cols.master !== undefined ? (Number(row[cols.master]) || '') : '',
-            cajas: cols.cajas !== undefined ? (Number(row[cols.cajas]) || '') : '',
-            cbm: cols.cbm !== undefined ? (Number(row[cols.cbm]) || 0) : 0,
-            puerto: cols.puerto !== undefined ? String(row[cols.puerto] || '').trim() : ''
-          });
-        }
-        if(items.length){
-          sheets.push({ name, hasPort: cols.puerto !== undefined, port: 'Ningbo', items });
-        }
-      });
-
-      if(!sheets.length) throw new Error('No encontré hojas con ítems pedidos (cantidad > 0).');
-      NP = { sheets, etd };
-      renderSheetList();
-      renderPreview();
-      const totalItems = sheets.reduce((a,s) => a + s.items.length, 0);
-      const info = document.getElementById('npInfo');
-      info.style.display = 'block';
-      info.textContent = `✓ ${file.name} — ${sheets.length} hoja(s) con pedido, ${totalItems} ítem(s) con cantidad.` + (etd ? ` · ETD: ${etd}` : '');
-      const noPort = sheets.filter(s => !s.hasPort);
-      const warn = document.getElementById('npWarn');
-      if(noPort.length){
-        warn.style.display = 'block';
-        warn.textContent = '⚠ Formato viejo sin puerto por ítem: elegí el puerto de ' + noPort.map(s => s.name).join(', ') + '.';
-      } else warn.style.display = 'none';
-    }catch(err){
-      alert('No pude leer la nota de pedido: ' + err.message);
+  readWB_(file, wb => {
+    const n = detectNota_(wb);
+    if(n) return applyNota_(n, file);
+    const p = detectProforma_(wb);
+    if(p){                                    // se soltó una proforma en la solapa equivocada
+      applyProforma_(p, file);
+      switchTab(1);
+      showMsg('msg','ok', `Eso era una proforma, así que te traje a esta solapa: ${file.name} cargado.`);
+      return;
     }
-  };
-  reader.readAsArrayBuffer(file);
+    alert('No pude leer el archivo.\n\nSi es una nota de pedido, cada hoja de producto necesita encabezados SKU/Código, Descripción, Cantidad y FOB, con al menos un ítem con cantidad mayor a 0.');
+  });
+}
+
+function applyNota_(n, file){
+  NP = n;
+  renderSheetList();
+  renderPreview();
+  const totalItems = n.sheets.reduce((a, s) => a + s.items.length, 0);
+  const info = document.getElementById('npInfo');
+  info.style.display = 'block';
+  info.textContent = `✓ ${file.name} — ${n.sheets.length} hoja(s) con pedido, ${totalItems} ítem(s) con cantidad.` +
+    (n.etd ? ` · ETD: ${n.etd}` : '');
+  const noPort = n.sheets.filter(s => !s.hasPort);
+  const warn = document.getElementById('npWarn');
+  if(noPort.length){
+    warn.style.display = 'block';
+    warn.textContent = '⚠ Formato viejo sin puerto por ítem: elegí el puerto de ' + noPort.map(s => s.name).join(', ') + '.';
+  } else warn.style.display = 'none';
+  // sugerir cliente y país si vienen en el nombre del archivo o quedaron vacíos
+  if(!document.getElementById('pfCliente').value) document.getElementById('pfCliente').focus();
 }
 
 function renderSheetList(){
