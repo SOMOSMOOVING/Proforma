@@ -297,6 +297,8 @@ function applySku_(tr, force){
     if(force) [cat, lic, sel].forEach(el => el.classList.remove('auto'));
     return false;
   }
+  const descEl = tr.querySelector('.i-desc');
+  if(info[3] && (force || !descEl.value)) descEl.value = info[3];
   [[cat, info[0]], [lic, info[1]], [sel, info[2]]].forEach(([el, val]) => {
     if(!val) return;
     if(force || !el.value){
