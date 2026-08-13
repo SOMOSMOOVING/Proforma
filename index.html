@@ -84,66 +84,15 @@
 
 <div class="wrap">
   <h1>Mooving Comex</h1>
-  <p class="sub">Cargá proformas al Dashboard o generá una proforma desde una nota de pedido.</p>
+  <p class="sub">Generá una proforma desde una nota de pedido, o agregá una proforma al Sheets.</p>
 
   <div class="tabs">
-    <button class="tab active" id="tabBtn1" onclick="switchTab(1)">Cargar al Dashboard</button>
-    <button class="tab" id="tabBtn2" onclick="switchTab(2)">Generar Proforma</button>
-  </div>
-
-  <!-- ============ SOLAPA 1: CARGA AL DASHBOARD ============ -->
-  <div id="tab1">
-    <div class="card">
-      <h2>1 · Proforma <span style="font-weight:400;color:var(--muted);font-size:.85rem">(opcional — también podés cargar a mano)</span></h2>
-      <div id="drop" class="drop">
-        <p><strong>Arrastrá la proforma acá</strong> o hacé clic para elegir el archivo (.xls / .xlsx)</p>
-      </div>
-      <input type="file" id="file" accept=".xls,.xlsx" hidden>
-      <div id="parseInfo" class="parseInfo"></div>
-      <div id="parseWarn" class="parseWarn"></div>
-    </div>
-
-    <div class="card">
-      <h2>2 · Datos generales <span id="listState" class="badge">cargando listas…</span></h2>
-      <div class="grid g4">
-        <div><label>Fecha</label><input type="date" id="fecha"></div>
-        <div><label>Cliente</label><select id="cliente"></select></div>
-        <div><label>País</label><select id="pais"></select></div>
-        <div><label>FC Samedy</label><input type="text" id="fcSamedy" placeholder="Ej: A 1398"></div>
-      </div>
-      <div class="grid g4" style="margin-top:14px">
-        <div><label>Quarter</label><select id="quarter"><option value=""></option><option>Q1</option><option>Q2</option><option>Q3</option><option>Q4</option></select></div>
-        <div><label>Temporada</label><input type="text" id="temporada" placeholder="Ej: COLORING"></div>
-        <div><label>N° Proforma</label><input type="text" id="nroProforma" placeholder="Se completa solo al subir el archivo"></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>3 · Ítems</h2>
-      <div style="overflow-x:auto">
-        <table>
-          <thead><tr>
-            <th style="width:110px">SKU</th><th>Descripción</th><th style="width:130px">Categoría</th>
-            <th style="width:90px">Cantidad</th><th style="width:100px">FOB Vta (u.)</th>
-            <th style="width:130px">Licencia</th><th style="width:120px">Sello</th>
-            <th style="width:95px;text-align:right">Total</th><th style="width:30px"></th>
-          </tr></thead>
-          <tbody id="items"></tbody>
-        </table>
-      </div>
-      <p class="hint">Categoría, Licencia y Sello se completan solos según el SKU, tomando cómo se cargó ese mismo SKU en el histórico del Dashboard. Si es un SKU nuevo quedan vacíos para que los elijas.</p>
-      <div class="totalbar">
-        <button class="btn btn-ghost" onclick="addItem()">+ Agregar ítem</button>
-        <div class="total">Total: <span id="grandTotal">USD 0.00</span></div>
-      </div>
-    </div>
-
-    <button class="btn btn-brand" id="send" onclick="submitAll()">Cargar al Google Sheet</button>
-    <div id="msg" class="msg"></div>
+    <button class="tab active" id="tabBtn2" onclick="switchTab(2)">Generar Proforma</button>
+    <button class="tab" id="tabBtn1" onclick="switchTab(1)">Agregar al Sheets</button>
   </div>
 
   <!-- ============ SOLAPA 2: GENERAR PROFORMA ============ -->
-  <div id="tab2" style="display:none">
+  <div id="tab2">
     <div class="card">
       <h2>1 · Nota de pedido</h2>
       <div id="dropNP" class="drop">
@@ -206,6 +155,57 @@
     <button class="btn btn-brand" id="genBtn" onclick="genProforma()">Descargar Proforma (.xlsx)</button>
     <div id="pfMsg" class="msg"></div>
   </div>
+  <!-- ============ SOLAPA 1: CARGA AL DASHBOARD ============ -->
+  <div id="tab1" style="display:none">
+    <div class="card">
+      <h2>1 · Proforma <span style="font-weight:400;color:var(--muted);font-size:.85rem">(opcional — también podés cargar a mano)</span></h2>
+      <div id="drop" class="drop">
+        <p><strong>Arrastrá la proforma acá</strong> o hacé clic para elegir el archivo (.xls / .xlsx)</p>
+      </div>
+      <input type="file" id="file" accept=".xls,.xlsx" hidden>
+      <div id="parseInfo" class="parseInfo"></div>
+      <div id="parseWarn" class="parseWarn"></div>
+    </div>
+
+    <div class="card">
+      <h2>2 · Datos generales <span id="listState" class="badge">cargando listas…</span></h2>
+      <div class="grid g4">
+        <div><label>Fecha</label><input type="date" id="fecha"></div>
+        <div><label>Cliente</label><select id="cliente"></select></div>
+        <div><label>País</label><select id="pais"></select></div>
+        <div><label>FC Samedy</label><input type="text" id="fcSamedy" placeholder="Ej: A 1398"></div>
+      </div>
+      <div class="grid g4" style="margin-top:14px">
+        <div><label>Quarter</label><select id="quarter"><option value=""></option><option>Q1</option><option>Q2</option><option>Q3</option><option>Q4</option></select></div>
+        <div><label>Temporada</label><input type="text" id="temporada" placeholder="Ej: COLORING"></div>
+        <div><label>N° Proforma</label><input type="text" id="nroProforma" placeholder="Se completa solo al subir el archivo"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3 · Ítems</h2>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th style="width:110px">SKU</th><th>Descripción</th><th style="width:130px">Categoría</th>
+            <th style="width:90px">Cantidad</th><th style="width:100px">FOB Vta (u.)</th>
+            <th style="width:130px">Licencia</th><th style="width:120px">Sello</th>
+            <th style="width:95px;text-align:right">Total</th><th style="width:30px"></th>
+          </tr></thead>
+          <tbody id="items"></tbody>
+        </table>
+      </div>
+      <p class="hint">Categoría, Licencia y Sello se completan solos según el SKU, tomando cómo se cargó ese mismo SKU en el histórico del Dashboard. Si es un SKU nuevo quedan vacíos para que los elijas.</p>
+      <div class="totalbar">
+        <button class="btn btn-ghost" onclick="addItem()">+ Agregar ítem</button>
+        <div class="total">Total: <span id="grandTotal">USD 0.00</span></div>
+      </div>
+    </div>
+
+    <button class="btn btn-brand" id="send" onclick="submitAll()">Agregar al Sheets</button>
+    <div id="msg" class="msg"></div>
+  </div>
+
 </div>
 
 <script>
@@ -532,7 +532,7 @@ function parseProforma(file){
     if(n){                                    // se soltó una nota de pedido en la solapa equivocada
       applyNota_(n, file);
       switchTab(2);
-      showMsg('pfMsg','ok', `Eso era una nota de pedido, así que te traje a esta solapa: ${file.name} cargado.`);
+      showMsg('pfMsg','ok', `Eso era una nota de pedido, así que te traje a Generar Proforma: ${file.name} cargado.`);
       return;
     }
     alert('No pude leer el archivo.\n\nSi es una proforma, necesita una fila de encabezados con Código/Code, Descripción/Description y Cantidad/Qty.\nSi es una nota de pedido, usá la solapa "Generar Proforma".');
@@ -644,7 +644,7 @@ async function submitAll(){
   }catch(err){
     showMsg('msg','err', 'Error al cargar: ' + err.message);
   }finally{
-    btn.classList.remove('loading'); btn.textContent = 'Cargar al Google Sheet';
+    btn.classList.remove('loading'); btn.textContent = 'Agregar al Sheets';
   }
 }
 function showMsg(id, cls, text){
@@ -714,7 +714,7 @@ function parseNota(file){
     if(p){                                    // se soltó una proforma en la solapa equivocada
       applyProforma_(p, file);
       switchTab(1);
-      showMsg('msg','ok', `Eso era una proforma, así que te traje a esta solapa: ${file.name} cargado.`);
+      showMsg('msg','ok', `Eso era una proforma, así que te traje a Agregar al Sheets: ${file.name} cargado.`);
       return;
     }
     alert('No pude leer el archivo.\n\nSi es una nota de pedido, cada hoja de producto necesita encabezados SKU/Código, Descripción, Cantidad y FOB, con al menos un ítem con cantidad mayor a 0.');
@@ -939,7 +939,7 @@ async function genProforma(){
     a.click();
     URL.revokeObjectURL(a.href);
     const tot = items.reduce((s, i) => s + i.total, 0);
-    showMsg('pfMsg','ok', `✓ Proforma generada: PI ${nro}.xlsx — ${items.length} ítems, USD ${fmt(tot)}. Ya la podés cargar al Dashboard desde la otra solapa.`);
+    showMsg('pfMsg','ok', `✓ Proforma generada: PI ${nro}.xlsx — ${items.length} ítems, USD ${fmt(tot)}. Ya la podés subir al Sheets desde la otra solapa.`);
   }catch(err){
     showMsg('pfMsg','err', 'Error al generar: ' + err.message);
   }finally{
