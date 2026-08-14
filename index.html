@@ -133,7 +133,7 @@
       <div style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th style="width:110px">Código</th><th>Descripción</th>
+            <th style="width:110px">Código</th><th style="width:120px">EAN</th><th>Descripción</th>
             <th style="width:80px;text-align:right">Cantidad</th><th style="width:110px;text-align:right">Precio Unit.</th>
             <th style="width:110px;text-align:right">Monto Total</th><th style="width:85px;text-align:right">Qty/Carton</th>
             <th style="width:80px;text-align:right">Cartons</th><th style="width:75px;text-align:right">CBM</th>
@@ -144,7 +144,7 @@
               </select>
             </th>
           </tr></thead>
-          <tbody id="pfItems"><tr><td colspan="9" style="color:var(--muted); padding:14px 6px">Subí una nota de pedido para ver los ítems.</td></tr></tbody>
+          <tbody id="pfItems"><tr><td colspan="10" style="color:var(--muted); padding:14px 6px">Subí una nota de pedido para ver los ítems.</td></tr></tbody>
         </table>
       </div>
       <div class="totalbar">
@@ -490,6 +490,7 @@ function detectNota_(wb){
         if(idx.cajas === undefined && ['cajas','total cartons','cartons'].includes(c)) idx.cajas = i;
         if(['cbm','cbm total'].includes(c)) idx.cbm = i;   // el último CBM de la fila es el total
         if(idx.puerto === undefined && ['puerto','port','departure port'].includes(c)) idx.puerto = i;
+        if(idx.ean === undefined && ['ean','upc','codigo de barras','barcode'].includes(c)) idx.ean = i;
       });
       if(idx.sku !== undefined && idx.desc !== undefined && idx.qty !== undefined && idx.fob !== undefined){
         hRow = r; cols = idx; break;
@@ -512,7 +513,8 @@ function detectNota_(wb){
         master: cols.master !== undefined ? (Number(row[cols.master]) || '') : '',
         cajas: cols.cajas !== undefined ? (Number(row[cols.cajas]) || '') : '',
         cbm: cols.cbm !== undefined ? (Number(row[cols.cbm]) || 0) : 0,
-        puerto: cols.puerto !== undefined ? String(row[cols.puerto] || '').trim() : ''
+        puerto: cols.puerto !== undefined ? String(row[cols.puerto] || '').trim() : '',
+        ean: cols.ean !== undefined ? String(row[cols.ean] || '').replace(/\.0$/,'').trim() : ''
       });
     }
     if(items.length) sheets.push({ name, hasPort: cols.puerto !== undefined, port:'Ningbo', items });
@@ -734,7 +736,11 @@ function renderSheetList(){ /* la elección de puerto ahora es por ítem en la v
 function allItems(){
   const out = [];
   if(!NP) return out;
-  NP.sheets.forEach(s => s.items.forEach(it => out.push({ ...it, puerto: it.puerto || s.port || 'Ningbo' })));
+  NP.sheets.forEach(s => s.items.forEach(it => out.push({
+    ...it,
+    puerto: it.puerto || s.port || 'Ningbo',
+    ean: it.ean || (SKUS[it.sku] && SKUS[it.sku][4]) || ''
+  })));
   return out;
 }
 // Cambia el puerto de un ítem puntual (por su posición en la vista previa)
@@ -761,7 +767,7 @@ function renderPreview(){
   const tb = document.getElementById('pfItems');
   const items = allItems();
   if(!items.length){
-    tb.innerHTML = '<tr><td colspan="9" style="color:var(--muted); padding:14px 6px">Subí una nota de pedido para ver los ítems.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="10" style="color:var(--muted); padding:14px 6px">Subí una nota de pedido para ver los ítems.</td></tr>';
     document.getElementById('pfCount').textContent = '';
     document.getElementById('pfTotal').textContent = '';
     return;
@@ -770,7 +776,7 @@ function renderPreview(){
   tb.innerHTML = items.map((it, idx) => {
     tQty += it.qty; tMonto += it.total; tCajas += Number(it.cajas) || 0; tCbm += it.cbm;
     return `<tr>
-      <td>${esc(it.sku)}</td><td>${esc(it.desc)}</td>
+      <td>${esc(it.sku)}</td><td>${esc(it.ean || '—')}</td><td>${esc(it.desc)}</td>
       <td class="num">${it.qty.toLocaleString('en-US')}</td>
       <td class="num">USD ${fmt(it.fob)}</td>
       <td class="num">USD ${fmt(it.total)}</td>
@@ -829,7 +835,7 @@ async function genProforma(){
     const ws = wb.addWorksheet('Sheet1', { views: [{ showGridLines: false }] });
 
     // Anchos de columna calcados de la proforma real
-    [[2,35.4],[3,67.6],[4,12.2],[5,23.9],[6,29.8],[7,19.1],[8,22.2],[9,22.2],[10,21.6]]
+    [[2,18],[3,18],[4,67.6],[5,12.2],[6,23.9],[7,29.8],[8,19.1],[9,22.2],[10,22.2],[11,21.6]]
       .forEach(([c, w]) => { ws.getColumn(c).width = w; });
 
     const AR = (sz, bold) => ({ name:'Arial', size: sz, bold: !!bold });
@@ -848,11 +854,11 @@ async function genProforma(){
     ws.addImage(logoId, { tl: { col: 0, row: 0 }, ext: { width: 337, height: 108 } });
 
     // ---- Encabezado ----
-    B(7, 3, 'PROFORMA INVOICE', AR(13, true), { align:'center' });
+    B(7, 4, 'PROFORMA INVOICE', AR(13, true), { align:'center' });
     B(7, 5, 'Cliente', AR(10));
     B(7, 6, g('pfCliente'), AR(10), { align:'center' });
     B(8, 2, emp.nombre, AR(10));
-    B(8, 3, 'Nº ' + nro, AR(13, true), { align:'center' });
+    B(8, 4, 'Nº ' + nro, AR(13, true), { align:'center' });
     B(8, 5, 'Direccion', AR(10));
     B(8, 6, g('pfDireccion'), AR(10), { align:'center' });
     B(9, 2, emp.lineas[0], AR(10));
@@ -870,7 +876,7 @@ async function genProforma(){
     const thin = { style:'thin' };
     const bd = { top: thin, left: thin, bottom: thin, right: thin };
     const HEAD = 17;
-    ['Codigo','Descripción','Cantidad','Precio Unitario','Monto Total','Qty/Carton','Total Cartons','CBM','DEPARTURE PORT']
+    ['Codigo','EAN','Descripción','Cantidad','Precio Unitario','Monto Total','Qty/Carton','Total Cartons','CBM','DEPARTURE PORT']
       .forEach((h, i) => B(HEAD, i + 2, h, AR(12, true), { align:'center', border: bd, wrap: true }));
     ws.getRow(HEAD).height = 15.6;
 
@@ -878,26 +884,28 @@ async function genProforma(){
     let r = first;
     items.forEach(it => {
       const skuNum = /^\d+$/.test(it.sku) ? Number(it.sku) : it.sku;
+      const eanNum = /^\d+$/.test(it.ean || '') ? Number(it.ean) : (it.ean || '');
       B(r, 2, skuNum, AR(12), { align:'center', border: bd });
-      B(r, 3, it.desc, AR(12), { align:'center', border: bd, wrap: true });
-      B(r, 4, it.qty, AR(12), { align:'center', border: bd, numFmt:'#,##0' });
-      B(r, 5, it.fob, AR(12), { align:'center', border: bd, numFmt:'[$USD]\\ #,##0.000' });
-      B(r, 6, { formula: `+E${r}*D${r}` }, AR(12), { align:'center', border: bd, numFmt:'[$USD]\\ #,##0.000' });
+      B(r, 3, eanNum, AR(12), { align:'center', border: bd, numFmt:'0' });
+      B(r, 4, it.desc, AR(12), { align:'center', border: bd, wrap: true });
+      B(r, 5, it.qty, AR(12), { align:'center', border: bd, numFmt:'#,##0' });
+      B(r, 6, it.fob, AR(12), { align:'center', border: bd, numFmt:'[$USD]\\ #,##0.000' });
+      B(r, 7, { formula: `+F${r}*E${r}` }, AR(12), { align:'center', border: bd, numFmt:'[$USD]\\ #,##0.000' });
       // Qty/Carton se calcula como Cantidad / Total Cartons (igual que en la proforma original)
-      B(r, 7, it.cajas ? { formula: `+D${r}/H${r}` } : (it.master || ''), AR(12), { align:'center', border: bd, numFmt:'#,##0' });
-      B(r, 8, it.cajas || '', AR(12), { align:'center', border: bd, numFmt:'#,##0' });
-      B(r, 9, it.cbm || '', AR(12), { align:'center', border: bd, numFmt:'0.0000' });
-      B(r, 10, it.puerto, AR(12), { align:'center', border: bd });
+      B(r, 8, it.cajas ? { formula: `+E${r}/I${r}` } : (it.master || ''), AR(12), { align:'center', border: bd, numFmt:'#,##0' });
+      B(r, 9, it.cajas || '', AR(12), { align:'center', border: bd, numFmt:'#,##0' });
+      B(r, 10, it.cbm || '', AR(12), { align:'center', border: bd, numFmt:'0.0000' });
+      B(r, 11, it.puerto, AR(12), { align:'center', border: bd });
       ws.getRow(r).height = 15.6;
       r++;
     });
     const last = r - 1;
 
     // ---- Totales ----
-    B(r, 4, { formula: `SUM(D${first}:D${last})` }, AR(11, true), { align:'center', border: bd, numFmt:'#,##0' });
-    B(r, 6, { formula: `SUM(F${first}:F${last})` }, AR(11, true), { align:'center', border: bd, numFmt:'[$USD]\\ #,##0.00' });
-    B(r, 8, { formula: `SUM(H${first}:H${last})` }, AR(12, true), { align:'center', border: bd, numFmt:'#,##0' });
-    B(r, 9, { formula: `SUM(I${first}:I${last})` }, AR(12, true), { align:'center', border: bd, numFmt:'#,##0.00000' });
+    B(r, 5, { formula: `SUM(E${first}:E${last})` }, AR(11, true), { align:'center', border: bd, numFmt:'#,##0' });
+    B(r, 7, { formula: `SUM(G${first}:G${last})` }, AR(11, true), { align:'center', border: bd, numFmt:'[$USD]\\ #,##0.00' });
+    B(r, 9, { formula: `SUM(I${first}:I${last})` }, AR(12, true), { align:'center', border: bd, numFmt:'#,##0' });
+    B(r, 10, { formula: `SUM(J${first}:J${last})` }, AR(12, true), { align:'center', border: bd, numFmt:'#,##0.00000' });
     ws.getRow(r).height = 15.6;
 
     // ---- Bloque fijo ----
@@ -922,7 +930,7 @@ async function genProforma(){
     // ---- Impresión: solo Codigo..Monto Total, como la proforma original ----
     ws.pageSetup.orientation = 'portrait';
     ws.pageSetup.scale = 52;
-    ws.pageSetup.printArea = `$B$1:$F$${r + 2}`;
+    ws.pageSetup.printArea = `B$1:G$${r + 2}`;
     ws.pageSetup.margins = { left:0.72, right:0.25, top:1, bottom:0.75, header:0.3, footer:0.3 };
 
     const buf = await wb.xlsx.writeBuffer();
