@@ -522,18 +522,86 @@ function detectNota_(wb){
   return sheets.length ? { sheets, etd } : null;
 }
 
+/* ===== ¿el archivo es una proforma o una nota de pedido? =====
+   Los dos formatos comparten los encabezados básicos (Código / Descripción /
+   Cantidad / Precio), así que un mismo archivo puede "dar positivo" en los dos
+   detectores. Esta función desempata: cada formato suma puntos por las señales
+   que SOLO él tiene. Si ninguno suma, devuelve '' y se sigue con el orden de
+   siempre, así un archivo raro nunca queda sin leer.
+   Ojo: a propósito NO se usan como señal "Monto Total", "Total Cartons",
+   "DEPARTURE PORT" ni "Unit Price", porque hay notas de pedido que también los
+   traen (están contemplados como sinónimos en detectNota_). */
+function rowsLimitados_(ws, maxRows){
+  if(!ws || !ws['!ref']) return [];
+  const rng = XLSX.utils.decode_range(ws['!ref']);
+  if(rng.e.r > maxRows - 1) rng.e.r = maxRows - 1;
+  return XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:'', range: XLSX.utils.encode_range(rng)});
+}
+/* ¿Cuántas hojas tienen una tabla de ítems? Una proforma es siempre UNA sola
+   tabla; una nota de pedido trae una hoja por línea de producto. */
+function hojasConTabla_(wb){
+  let n = 0;
+  wb.SheetNames.forEach(name => {
+    const rows = rowsLimitados_(wb.Sheets[name], 15);
+    for(let r = 0; r < rows.length; r++){
+      const cells = (rows[r] || []).map(normLabel_);
+      const hayDesc = cells.some(c => ['descripcion','description','producto'].includes(c));
+      const hayQty  = cells.some(c => ['cantidad','cantidad total','qty','quantity'].includes(c));
+      const haySku  = cells.some(c => ['sku','codigo','code'].includes(c));
+      if(hayDesc && hayQty && haySku){ n++; break; }
+    }
+  });
+  return n;
+}
+function tipoDeArchivo_(wb){
+  let pf = 0, nt = 0;
+  const senales = { proforma: [], nota: [] };
+  const sumar = (quien, pts, texto) => {
+    const lista = quien === 'pf' ? senales.proforma : senales.nota;
+    if(quien === 'pf') pf += pts; else nt += pts;
+    if(!lista.includes(texto)) lista.push(texto);
+  };
+  wb.SheetNames.forEach(name => {
+    if(normLabel_(name).startsWith('resumen')) sumar('nt', 100, 'la hoja "Resumen"');
+    rowsLimitados_(wb.Sheets[name], 60).forEach(row => {
+      (row || []).forEach(cell => {
+        const t = normLabel_(cell);
+        if(!t) return;
+        if(t.includes('proforma invoice'))  sumar('pf', 100, 'el título "PROFORMA INVOICE"');
+        if(t === 'qty/carton')              sumar('pf',  20, 'la columna "Qty/Carton"');
+        if(t.startsWith('nota de pedido'))  sumar('nt', 100, 'el título "Nota de Pedido"');
+        if(t === 'master' || t === 'inner') sumar('nt',  20, 'las columnas "Master"/"Inner"');
+        if(t === 'muestras')                sumar('nt',  20, 'la columna "Muestras?"');
+        if(t === 'licencia')                sumar('nt',  20, 'la columna "Licencia"');
+      });
+    });
+  });
+  // Varias hojas con tabla de ítems = nota de pedido. Pesa menos que el título,
+  // así que una proforma que diga "PROFORMA INVOICE" gana igual.
+  if(hojasConTabla_(wb) >= 2) sumar('nt', 40, 'que hay varias hojas con ítems');
+  const tipo = pf > nt ? 'proforma' : (nt > pf ? 'nota' : '');
+  const motivo = tipo === 'proforma' ? senales.proforma.join(' y ')
+               : tipo === 'nota'     ? senales.nota.join(' y ') : '';
+  return { tipo, motivo, pf, nt };
+}
+
 /* ===== solapa 1: cargar proforma ===== */
 function parseProforma(file){
   readWB_(file, wb => {
-    const p = detectProforma_(wb);
+    const t = tipoDeArchivo_(wb);
+    // Si el archivo tiene marcas claras de nota de pedido, ni se intenta leer
+    // como proforma: los encabezados de los dos formatos se parecen demasiado.
+    const p = t.tipo === 'nota' ? null : detectProforma_(wb);
     if(p) return applyProforma_(p, file);
     const n = detectNota_(wb);
     if(n){                                    // se soltó una nota de pedido en la solapa equivocada
       applyNota_(n, file);
       switchTab(2);
-      showMsg('pfMsg','ok', `Eso era una nota de pedido, así que te traje a Generar Proforma: ${file.name} cargado.`);
+      showMsg('pfMsg','ok', `Eso era una nota de pedido${t.motivo ? ' (por ' + t.motivo + ')' : ''}, así que te traje a Generar Proforma: ${file.name} cargado.`);
       return;
     }
+    const p2 = detectProforma_(wb);           // red de seguridad: si no se pudo leer como nota, se prueba igual
+    if(p2) return applyProforma_(p2, file);
     alert('No pude leer el archivo.\n\nSi es una proforma, necesita una fila de encabezados con Código/Code, Descripción/Description y Cantidad/Qty.\nSi es una nota de pedido, usá la solapa "Generar Proforma".');
   });
 }
@@ -699,15 +767,21 @@ fileNP.addEventListener('change', () => { if(fileNP.files[0]) parseNota(fileNP.f
 /* ===== solapa 2: cargar nota de pedido ===== */
 function parseNota(file){
   readWB_(file, wb => {
-    const n = detectNota_(wb);
+    const t = tipoDeArchivo_(wb);
+    // Si el archivo tiene marcas claras de proforma, ni se intenta leer como
+    // nota de pedido (era el caso de la proforma en inglés, que traía
+    // Code / Description / Qty / Unit Price igual que una nota).
+    const n = t.tipo === 'proforma' ? null : detectNota_(wb);
     if(n) return applyNota_(n, file);
     const p = detectProforma_(wb);
     if(p){                                    // se soltó una proforma en la solapa equivocada
       applyProforma_(p, file);
       switchTab(1);
-      showMsg('msg','ok', `Eso era una proforma, así que te traje a Agregar al Sheets: ${file.name} cargado.`);
+      showMsg('msg','ok', `Eso era una proforma${t.motivo ? ' (por ' + t.motivo + ')' : ''}, así que te traje a Agregar al Sheets: ${file.name} cargado.`);
       return;
     }
+    const n2 = detectNota_(wb);               // red de seguridad: si no se pudo leer como proforma, se prueba igual
+    if(n2) return applyNota_(n2, file);
     alert('No pude leer el archivo.\n\nSi es una nota de pedido, cada hoja de producto necesita encabezados SKU/Código, Descripción, Cantidad y FOB, con al menos un ítem con cantidad mayor a 0.');
   });
 }
