@@ -120,8 +120,8 @@
       </div>
       <div class="grid g3" style="margin-top:14px">
         <div><label>Cliente <span id="cliState" style="font-weight:400;text-transform:none;letter-spacing:0"></span></label>
-          <input type="text" id="pfCliente" list="pfClientesList" autocomplete="off" placeholder="Elegí de la lista o escribilo">
-          <datalist id="pfClientesList"></datalist>
+          <select id="pfClienteSel"></select>
+          <input type="text" id="pfCliente" autocomplete="off" style="display:none;margin-top:6px" placeholder="Escribí el nombre del cliente">
         </div>
         <div><label>Razón social <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(es la que se imprime)</span></label>
           <input type="text" id="pfRazon" placeholder="Nombre legal completo"></div>
@@ -131,8 +131,8 @@
         <div><label>Dirección</label><input type="text" id="pfDireccion"></div>
         <div><label>Ciudad</label><input type="text" id="pfCiudad"></div>
         <div><label>País <span id="paisState" style="font-weight:400;text-transform:none;letter-spacing:0"></span></label>
-          <input type="text" id="pfPais" list="pfPaisesList" autocomplete="off">
-          <datalist id="pfPaisesList"></datalist>
+          <select id="pfPaisSel"></select>
+          <input type="text" id="pfPais" autocomplete="off" style="display:none;margin-top:6px" placeholder="Escribí el país">
         </div>
       </div>
       <div class="grid g2" style="margin-top:14px">
@@ -275,7 +275,10 @@ async function loadLists(){
     }
     LISTS = data.lists;
     SKUS  = data.skus || {};
-    fillSelect('cliente', LISTS.clientes, true);
+    // El desplegable de esta solapa combina las dos fuentes: la validación del
+    // Dashboard (que es la que manda para que el Sheet acepte la fila) más los
+    // clientes de "Datos Clientes Comex" que todavía no tienen histórico.
+    fillSelect('cliente', unirClientes_(LISTS.clientes, data.clientesComex), true);
     fillSelect('pais', LISTS.paises, true);
     cargarClientesComex_(data.clientesComex);
     document.querySelectorAll('#items tr').forEach(tr => {
@@ -303,6 +306,66 @@ function refreshRowSelect(sel){
   if(kind) fillSelect(sel, LISTS[kind], true);
 }
 
+/* ===== desplegables con opción de escribir a mano =====
+   Son <select> de verdad (con su flechita), no cajas de texto con sugerencias.
+   El valor real vive SIEMPRE en el input de texto, que está oculto salvo que
+   elijas "Otro"; así el resto del código sigue leyendo pfCliente y pfPais
+   como siempre. */
+/* Une los clientes del Dashboard con los de "Datos Clientes Comex", sin
+   repetidos. La comparación ignora mayúsculas, acentos y espacios de más, así
+   que "AY LOLA" y "Ay  Lola" cuentan como el mismo. Cuando un nombre está en
+   las dos listas se conserva el del Dashboard, que es el que la validación del
+   Sheet espera recibir. */
+function unirClientes_(dashboard, comex){
+  const clave = s => String(s || '').trim().toUpperCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ');
+  const out = (dashboard || []).slice();
+  const vistos = {};
+  out.forEach(n => { vistos[clave(n)] = true; });
+  (comex || []).forEach(c => {
+    const n = c && c.nombre ? String(c.nombre).trim() : '';
+    if(!n || vistos[clave(n)]) return;
+    vistos[clave(n)] = true;
+    out.push(n);
+  });
+  return out.sort((a, b) => String(a).localeCompare(String(b)));
+}
+
+const OTRO_ = '__OTRO__';
+function verLibre_(inp, ver, foco){
+  inp.style.display = ver ? '' : 'none';
+  if(ver && foco) setTimeout(() => inp.focus(), 0);
+}
+function armarCombo_(idSel, idInp, valores, textoVacio){
+  const sel = document.getElementById(idSel), inp = document.getElementById(idInp);
+  sel.innerHTML = '';
+  const add = (val, txt) => {
+    const o = document.createElement('option');   // con el DOM, no con HTML: así un
+    o.value = val; o.textContent = txt;           // nombre con comillas no rompe nada
+    sel.appendChild(o);
+  };
+  add('', valores.length ? '— elegir —' : textoVacio);
+  valores.forEach(v => add(v, v));
+  add(OTRO_, '✏️ Otro (escribir a mano)');
+  sincronizarCombo_(idSel, idInp);
+}
+/* Deja el desplegable mostrando lo que haya en el input. Si ese valor no está
+   en la lista, cae en "Otro" y muestra el campo de texto. */
+function sincronizarCombo_(idSel, idInp){
+  const sel = document.getElementById(idSel), inp = document.getElementById(idInp);
+  const v = inp.value.trim();
+  const hay = Array.prototype.some.call(sel.options, o => o.value === v && v !== '');
+  sel.value = hay ? v : (v ? OTRO_ : '');
+  verLibre_(inp, !!v && !hay, false);
+}
+function comboCambio_(idSel, idInp, alCambiar){
+  const sel = document.getElementById(idSel), inp = document.getElementById(idInp);
+  if(sel.value === OTRO_){ inp.value = ''; verLibre_(inp, true, true); }
+  else { inp.value = sel.value; verLibre_(inp, false, false); }
+  inp.classList.remove('auto');
+  alCambiar();
+}
+
 /* ===== clientes de la hoja "Datos Clientes Comex" ===== */
 function cargarClientesComex_(lista){
   CLIENTES_LISTA = Array.isArray(lista) ? lista : [];
@@ -315,18 +378,18 @@ function cargarClientesComex_(lista){
     const k = c.nombre.trim().toUpperCase();
     (CLIENTES[k] = CLIENTES[k] || []).push(c);
   });
-  const nombres = Object.keys(CLIENTES);
-  const dl = document.getElementById('pfClientesList');
-  dl.innerHTML = '';
-  nombres.forEach(k => {                        // se arma con el DOM, no con HTML,
-    const o = document.createElement('option'); // así un nombre con comillas no rompe nada
-    o.value = CLIENTES[k][0].nombre;
-    dl.appendChild(o);
-  });
+  const nombres = Object.keys(CLIENTES).map(k => CLIENTES[k][0].nombre);
+  armarCombo_('pfClienteSel', 'pfCliente', nombres,
+              '⚠ lista vacía — falta implementar el Apps Script');
   const st = document.getElementById('cliState');
-  st.textContent = nombres.length ? `· ${nombres.length} en la lista` : '· lista vacía';
+  st.textContent = nombres.length
+    ? `· ${nombres.length} en la lista`
+    : '· lista vacía — el Apps Script quedó en la versión vieja';
   st.style.color = nombres.length ? 'var(--ok)' : '#b45309';
-  aplicarCliente_();                            // por si ya había un cliente escrito
+  // Sin lista no se puede elegir nada: se abre el campo de texto para que la
+  // página siga siendo usable a mano.
+  if(!nombres.length) verLibre_(document.getElementById('pfCliente'), true, false);
+  aplicarCliente_();                            // por si ya había un cliente elegido
 }
 
 /* Fichas cargadas para el nombre que está escrito en Cliente. */
@@ -341,6 +404,7 @@ function ponerCampos_(c){
       f.value = val || '';
       f.classList.toggle('auto', !!val);
     });
+  sincronizarCombo_('pfPaisSel', 'pfPais');     // el desplegable acompaña al valor
 }
 
 /* Completa razón social, RUT, dirección, ciudad y país cuando el nombre coincide
@@ -351,21 +415,18 @@ function aplicarCliente_(){
   const key = document.getElementById('pfCliente').value.trim().toUpperCase();
   const fichas = fichasDelCliente_();
   const est = document.getElementById('paisState');
-  const dl = document.getElementById('pfPaisesList');
-  dl.innerHTML = '';
 
   if(!fichas.length){                           // cliente nuevo: se completa a mano
     CLIENTE_APLICADO = '';
     est.textContent = '';
+    // Sin ficha, el desplegable de País ofrece la lista general del Dashboard.
+    armarCombo_('pfPaisSel', 'pfPais', (LISTS.paises || []), 'escribilo a mano');
     return false;
   }
-  // El desplegable de País ofrece solo los países de ESE cliente.
-  fichas.forEach(c => {
-    if(!c.pais) return;
-    const o = document.createElement('option');
-    o.value = c.pais;
-    dl.appendChild(o);
-  });
+  // Con ficha, el desplegable ofrece solo los países de ESE cliente.
+  const paises = [];
+  fichas.forEach(c => { if(c.pais && paises.indexOf(c.pais) < 0) paises.push(c.pais); });
+  armarCombo_('pfPaisSel', 'pfPais', paises, 'escribilo a mano');
   est.textContent = fichas.length > 1 ? `· ${fichas.length} países, elegí cuál` : '';
   est.style.color = '#b45309';
 
@@ -385,6 +446,10 @@ function aplicarPais_(){
   if(c) ponerCampos_(c);
 }
 
+document.getElementById('pfClienteSel').addEventListener('change', () =>
+  comboCambio_('pfClienteSel', 'pfCliente', () => { aplicarCliente_(); autoNro(); }));
+document.getElementById('pfPaisSel').addEventListener('change', () =>
+  comboCambio_('pfPaisSel', 'pfPais', aplicarPais_));
 document.getElementById('pfCliente').addEventListener('input', aplicarCliente_);
 document.getElementById('pfPais').addEventListener('change', aplicarPais_);
 ['pfRazon','pfRut','pfDireccion','pfCiudad','pfPais'].forEach(id => {
