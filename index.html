@@ -25,7 +25,8 @@
   .g4{grid-template-columns:repeat(4,1fr);}
   .g2{grid-template-columns:repeat(2,1fr);}
   .g5{grid-template-columns:1.3fr .9fr 1.2fr 1fr 1fr;}
-  @media(max-width:760px){.g4{grid-template-columns:1fr 1fr;} .g5{grid-template-columns:1fr 1fr;}}
+  .g3{grid-template-columns:repeat(3,1fr);}
+  @media(max-width:760px){.g4{grid-template-columns:1fr 1fr;} .g5{grid-template-columns:1fr 1fr;} .g3{grid-template-columns:1fr;}}
   /* tabs */
   .tabs{display:flex; gap:8px; margin-bottom:20px;}
   .tab{padding:10px 22px; border-radius:99px; border:1px solid var(--line); background:#fff; font-weight:600; font-size:.95rem; cursor:pointer; color:var(--muted);}
@@ -117,20 +118,27 @@
         <div><label>Fecha</label><input type="date" id="pfFecha"></div>
         <div style="grid-column:span 2"><label>N° Proforma</label><input type="text" id="pfNro" placeholder="Se arma solo: DD.MM.AAAA-CLIENTE"></div>
       </div>
-      <div class="grid g5" style="margin-top:14px">
+      <div class="grid g3" style="margin-top:14px">
         <div><label>Cliente <span id="cliState" style="font-weight:400;text-transform:none;letter-spacing:0"></span></label>
           <input type="text" id="pfCliente" list="pfClientesList" autocomplete="off" placeholder="Elegí de la lista o escribilo">
           <datalist id="pfClientesList"></datalist>
         </div>
+        <div><label>Razón social <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(es la que se imprime)</span></label>
+          <input type="text" id="pfRazon" placeholder="Nombre legal completo"></div>
         <div><label>RUT</label><input type="text" id="pfRut" placeholder="—"></div>
+      </div>
+      <div class="grid g3" style="margin-top:14px">
         <div><label>Dirección</label><input type="text" id="pfDireccion"></div>
         <div><label>Ciudad</label><input type="text" id="pfCiudad"></div>
-        <div><label>País</label><input type="text" id="pfPais"></div>
+        <div><label>País <span id="paisState" style="font-weight:400;text-transform:none;letter-spacing:0"></span></label>
+          <input type="text" id="pfPais" list="pfPaisesList" autocomplete="off">
+          <datalist id="pfPaisesList"></datalist>
+        </div>
       </div>
       <div class="grid g2" style="margin-top:14px">
         <div><label>Condición de pago</label><input type="text" id="pfPago" value="Pago: 30% anticipo, saldo contra BL."></div>
       </div>
-      <p class="hint">Al elegir un cliente de la lista se completan solos su RUT, dirección, ciudad y país (salen de la hoja «Datos Clientes Comex»). Si es un cliente nuevo, escribilo y completá los datos a mano. Al elegir la empresa, la proforma sale con sus datos y su bloque bancario completo; el bloque debajo de los ítems es fijo.</p>
+      <p class="hint">Al elegir un cliente de la lista se completan solos su razón social, RUT, dirección, ciudad y país (salen de la hoja «Datos Clientes Comex»). Si el mismo cliente está cargado en varios países, el desplegable de País te deja elegir cuál, y los demás datos se acomodan a ese país. Si es un cliente nuevo, escribilo y completá los datos a mano. Al elegir la empresa, la proforma sale con sus datos y su bloque bancario completo; el bloque debajo de los ítems es fijo.</p>
     </div>
 
     <div class="card">
@@ -298,42 +306,88 @@ function refreshRowSelect(sel){
 /* ===== clientes de la hoja "Datos Clientes Comex" ===== */
 function cargarClientesComex_(lista){
   CLIENTES_LISTA = Array.isArray(lista) ? lista : [];
+  // Un mismo nombre corto puede estar cargado varias veces con distinto país
+  // (ej. PLATINO en Guatemala y en El Salvador), así que cada nombre guarda
+  // una LISTA de fichas, no una sola.
   CLIENTES = {};
-  CLIENTES_LISTA.forEach(c => { if(c && c.nombre) CLIENTES[c.nombre.trim().toUpperCase()] = c; });
+  CLIENTES_LISTA.forEach(c => {
+    if(!c || !c.nombre) return;
+    const k = c.nombre.trim().toUpperCase();
+    (CLIENTES[k] = CLIENTES[k] || []).push(c);
+  });
+  const nombres = Object.keys(CLIENTES);
   const dl = document.getElementById('pfClientesList');
   dl.innerHTML = '';
-  CLIENTES_LISTA.forEach(c => {                 // se arma con el DOM, no con HTML,
-    if(!c || !c.nombre) return;                 // así un nombre con comillas no rompe nada
-    const o = document.createElement('option');
-    o.value = c.nombre;
+  nombres.forEach(k => {                        // se arma con el DOM, no con HTML,
+    const o = document.createElement('option'); // así un nombre con comillas no rompe nada
+    o.value = CLIENTES[k][0].nombre;
     dl.appendChild(o);
   });
   const st = document.getElementById('cliState');
-  st.textContent = CLIENTES_LISTA.length ? `· ${CLIENTES_LISTA.length} en la lista` : '· lista vacía';
-  st.style.color = CLIENTES_LISTA.length ? 'var(--ok)' : '#b45309';
+  st.textContent = nombres.length ? `· ${nombres.length} en la lista` : '· lista vacía';
+  st.style.color = nombres.length ? 'var(--ok)' : '#b45309';
   aplicarCliente_();                            // por si ya había un cliente escrito
 }
 
-/* Completa RUT, dirección, ciudad y país cuando el nombre coincide exacto con
-   uno de la hoja. Si después editás alguno a mano, no se vuelve a pisar (solo
-   se recarga si cambiás de cliente). */
-let CLIENTE_APLICADO = '';
-function aplicarCliente_(){
-  const key = document.getElementById('pfCliente').value.trim().toUpperCase();
-  const c = CLIENTES[key];
-  if(!c){ CLIENTE_APLICADO = ''; return false; }
-  if(CLIENTE_APLICADO === key) return true;
-  CLIENTE_APLICADO = key;
-  [['pfRut', c.rut], ['pfDireccion', c.direccion], ['pfCiudad', c.ciudad], ['pfPais', c.pais]]
+/* Fichas cargadas para el nombre que está escrito en Cliente. */
+function fichasDelCliente_(){
+  return CLIENTES[document.getElementById('pfCliente').value.trim().toUpperCase()] || [];
+}
+function ponerCampos_(c){
+  [['pfRazon', c.razon || c.nombre], ['pfRut', c.rut],
+   ['pfDireccion', c.direccion], ['pfCiudad', c.ciudad], ['pfPais', c.pais]]
     .forEach(([id, val]) => {
       const f = document.getElementById(id);
       f.value = val || '';
       f.classList.toggle('auto', !!val);
     });
+}
+
+/* Completa razón social, RUT, dirección, ciudad y país cuando el nombre coincide
+   exacto con uno de la hoja. Si después editás alguno a mano, no se vuelve a
+   pisar (solo se recarga si cambiás de cliente o de país). */
+let CLIENTE_APLICADO = '';
+function aplicarCliente_(){
+  const key = document.getElementById('pfCliente').value.trim().toUpperCase();
+  const fichas = fichasDelCliente_();
+  const est = document.getElementById('paisState');
+  const dl = document.getElementById('pfPaisesList');
+  dl.innerHTML = '';
+
+  if(!fichas.length){                           // cliente nuevo: se completa a mano
+    CLIENTE_APLICADO = '';
+    est.textContent = '';
+    return false;
+  }
+  // El desplegable de País ofrece solo los países de ESE cliente.
+  fichas.forEach(c => {
+    if(!c.pais) return;
+    const o = document.createElement('option');
+    o.value = c.pais;
+    dl.appendChild(o);
+  });
+  est.textContent = fichas.length > 1 ? `· ${fichas.length} países, elegí cuál` : '';
+  est.style.color = '#b45309';
+
+  if(CLIENTE_APLICADO === key) return true;     // ya estaba aplicado: no pisar ediciones
+  CLIENTE_APLICADO = key;
+  ponerCampos_(fichas[0]);
   return true;
 }
+
+/* Al cambiar el País, si ese cliente tiene una ficha para ese país se traen
+   la razón social, el RUT, la dirección y la ciudad de esa sucursal. */
+function aplicarPais_(){
+  const fichas = fichasDelCliente_();
+  if(fichas.length < 2) return;
+  const p = document.getElementById('pfPais').value.trim().toUpperCase();
+  const c = fichas.filter(f => String(f.pais || '').trim().toUpperCase() === p)[0];
+  if(c) ponerCampos_(c);
+}
+
 document.getElementById('pfCliente').addEventListener('input', aplicarCliente_);
-['pfRut','pfDireccion','pfCiudad','pfPais'].forEach(id => {
+document.getElementById('pfPais').addEventListener('change', aplicarPais_);
+['pfRazon','pfRut','pfDireccion','pfCiudad','pfPais'].forEach(id => {
   document.getElementById(id).addEventListener('input', e => e.target.classList.remove('auto'));
 });
 
@@ -949,6 +1003,10 @@ async function genProforma(){
   if(!g('pfCliente') || !g('pfPais')) return showMsg('pfMsg','err','Completá al menos Cliente y País.');
   if(!g('pfFecha')) return showMsg('pfMsg','err','Elegí la fecha.');
 
+  // En la proforma se imprime la RAZÓN SOCIAL (el nombre legal). Si está vacía
+  // —cliente nuevo cargado a mano— se usa lo que haya en Cliente.
+  const cliImpreso = g('pfRazon') || g('pfCliente');
+
   const emp = EMPRESAS[g('pfEmpresa') || 'SAMEDY'];
   const [y, m, d] = g('pfFecha').split('-').map(Number);
   const fecha = new Date(Date.UTC(y, m - 1, d));
@@ -982,11 +1040,11 @@ async function genProforma(){
     // ---- Encabezado ----
     B(7, 4, 'PROFORMA INVOICE', AR(13, true), { align:'center' });
     B(7, 5, 'Cliente', AR(10));
-    B(7, 6, g('pfCliente'), AR(10), { align:'center' });
+    B(7, 6, cliImpreso, AR(10), { align:'center' });
     B(8, 2, emp.nombre, AR(10));
     B(8, 4, 'Nº ' + nro, AR(13, true), { align:'center' });
     B(8, 5, 'Direccion', AR(10));
-    B(8, 6, g('pfDireccion'), AR(10), { align:'center' });
+    B(8, 6, g('pfDireccion'), AR(10), { align:'center', wrap: true });
     B(9, 2, emp.lineas[0], AR(10));
     B(9, 5, 'Ciudad', AR(10));
     B(9, 6, g('pfCiudad'), AR(10), { align:'center' });
