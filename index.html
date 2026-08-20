@@ -24,7 +24,8 @@
   .grid{display:grid; gap:14px;}
   .g4{grid-template-columns:repeat(4,1fr);}
   .g2{grid-template-columns:repeat(2,1fr);}
-  @media(max-width:760px){.g4{grid-template-columns:1fr 1fr;}}
+  .g5{grid-template-columns:1.3fr .9fr 1.2fr 1fr 1fr;}
+  @media(max-width:760px){.g4{grid-template-columns:1fr 1fr;} .g5{grid-template-columns:1fr 1fr;}}
   /* tabs */
   .tabs{display:flex; gap:8px; margin-bottom:20px;}
   .tab{padding:10px 22px; border-radius:99px; border:1px solid var(--line); background:#fff; font-weight:600; font-size:.95rem; cursor:pointer; color:var(--muted);}
@@ -116,8 +117,12 @@
         <div><label>Fecha</label><input type="date" id="pfFecha"></div>
         <div style="grid-column:span 2"><label>N° Proforma</label><input type="text" id="pfNro" placeholder="Se arma solo: DD.MM.AAAA-CLIENTE"></div>
       </div>
-      <div class="grid g4" style="margin-top:14px">
-        <div><label>Cliente</label><input type="text" id="pfCliente" placeholder="Ej: Distribuidora Piramide HS S.A"></div>
+      <div class="grid g5" style="margin-top:14px">
+        <div><label>Cliente <span id="cliState" style="font-weight:400;text-transform:none;letter-spacing:0"></span></label>
+          <input type="text" id="pfCliente" list="pfClientesList" autocomplete="off" placeholder="Elegí de la lista o escribilo">
+          <datalist id="pfClientesList"></datalist>
+        </div>
+        <div><label>RUT</label><input type="text" id="pfRut" placeholder="—"></div>
         <div><label>Dirección</label><input type="text" id="pfDireccion"></div>
         <div><label>Ciudad</label><input type="text" id="pfCiudad"></div>
         <div><label>País</label><input type="text" id="pfPais"></div>
@@ -125,7 +130,7 @@
       <div class="grid g2" style="margin-top:14px">
         <div><label>Condición de pago</label><input type="text" id="pfPago" value="Pago: 30% anticipo, saldo contra BL."></div>
       </div>
-      <p class="hint">Al elegir la empresa, la proforma sale con sus datos (RUT, dirección) y su bloque bancario completo. El bloque debajo de los ítems es fijo.</p>
+      <p class="hint">Al elegir un cliente de la lista se completan solos su RUT, dirección, ciudad y país (salen de la hoja «Datos Clientes Comex»). Si es un cliente nuevo, escribilo y completá los datos a mano. Al elegir la empresa, la proforma sale con sus datos y su bloque bancario completo; el bloque debajo de los ítems es fijo.</p>
     </div>
 
     <div class="card">
@@ -214,6 +219,10 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbzivd8gLTyw7eCfm_4lOLD8
 let PASS  = sessionStorage.getItem('mv_pass') || '';
 let LISTS = { clientes:[], paises:[], categorias:[], licencias:[], sellos:[] };
 let SKUS  = {};
+/* Clientes de la hoja "Datos Clientes Comex" (solo para la solapa Generar Proforma).
+   CLIENTES_LISTA mantiene el orden; CLIENTES busca por nombre en mayúsculas. */
+let CLIENTES_LISTA = [];
+let CLIENTES = {};
 
 /* ================== TABS ================== */
 function switchTab(n){
@@ -260,6 +269,7 @@ async function loadLists(){
     SKUS  = data.skus || {};
     fillSelect('cliente', LISTS.clientes, true);
     fillSelect('pais', LISTS.paises, true);
+    cargarClientesComex_(data.clientesComex);
     document.querySelectorAll('#items tr').forEach(tr => {
       tr.querySelectorAll('select').forEach(refreshRowSelect);
       applySku_(tr);
@@ -284,6 +294,48 @@ function refreshRowSelect(sel){
   const kind = sel.dataset.kind;
   if(kind) fillSelect(sel, LISTS[kind], true);
 }
+
+/* ===== clientes de la hoja "Datos Clientes Comex" ===== */
+function cargarClientesComex_(lista){
+  CLIENTES_LISTA = Array.isArray(lista) ? lista : [];
+  CLIENTES = {};
+  CLIENTES_LISTA.forEach(c => { if(c && c.nombre) CLIENTES[c.nombre.trim().toUpperCase()] = c; });
+  const dl = document.getElementById('pfClientesList');
+  dl.innerHTML = '';
+  CLIENTES_LISTA.forEach(c => {                 // se arma con el DOM, no con HTML,
+    if(!c || !c.nombre) return;                 // así un nombre con comillas no rompe nada
+    const o = document.createElement('option');
+    o.value = c.nombre;
+    dl.appendChild(o);
+  });
+  const st = document.getElementById('cliState');
+  st.textContent = CLIENTES_LISTA.length ? `· ${CLIENTES_LISTA.length} en la lista` : '· lista vacía';
+  st.style.color = CLIENTES_LISTA.length ? 'var(--ok)' : '#b45309';
+  aplicarCliente_();                            // por si ya había un cliente escrito
+}
+
+/* Completa RUT, dirección, ciudad y país cuando el nombre coincide exacto con
+   uno de la hoja. Si después editás alguno a mano, no se vuelve a pisar (solo
+   se recarga si cambiás de cliente). */
+let CLIENTE_APLICADO = '';
+function aplicarCliente_(){
+  const key = document.getElementById('pfCliente').value.trim().toUpperCase();
+  const c = CLIENTES[key];
+  if(!c){ CLIENTE_APLICADO = ''; return false; }
+  if(CLIENTE_APLICADO === key) return true;
+  CLIENTE_APLICADO = key;
+  [['pfRut', c.rut], ['pfDireccion', c.direccion], ['pfCiudad', c.ciudad], ['pfPais', c.pais]]
+    .forEach(([id, val]) => {
+      const f = document.getElementById(id);
+      f.value = val || '';
+      f.classList.toggle('auto', !!val);
+    });
+  return true;
+}
+document.getElementById('pfCliente').addEventListener('input', aplicarCliente_);
+['pfRut','pfDireccion','pfCiudad','pfPais'].forEach(id => {
+  document.getElementById(id).addEventListener('input', e => e.target.classList.remove('auto'));
+});
 
 /* ================== SOLAPA 1 (código existente) ================== */
 function applySku_(tr, force){
@@ -942,6 +994,13 @@ async function genProforma(){
     B(10, 5, 'Pais', AR(10));
     B(10, 6, g('pfPais'), AR(14, true), { align:'center' });
     B(11, 2, emp.lineas[2], AR(10));
+    // RUT del cliente, justo debajo de País. Va como TEXTO para no perder los
+    // puntos ni los ceros del principio. Si el cliente no tiene RUT, no se
+    // escribe ni la etiqueta, para no dejar un "RUT" suelto en la proforma.
+    if(g('pfRut')){
+      B(11, 5, 'RUT', AR(10));
+      B(11, 6, String(g('pfRut')), AR(10), { align:'center' });
+    }
     B(14, 5, 'Date / Fecha', AR(10));
     B(14, 6, fecha, AR(10), { numFmt:'dd/mm/yyyy', align:'center' });
     [[7,16.8],[8,17.4],[9,14.4],[10,18],[11,14.4]].forEach(([r,h]) => { ws.getRow(r).height = h; });
