@@ -225,6 +225,10 @@
    Google te da una URL NUEVA y hay que cambiarla acá también, si no la página
    sigue hablándole a la implementación vieja. */
 const API_URL = 'https://script.google.com/macros/s/AKfycbxVShRReTqz17l_MYgLl4owX080njcV4jDoKbuIvk0865aAmJPjUGJ8K9yn2BNncBY/exec';
+/* Los primeros caracteres de la implementación, para poder ver de un vistazo a
+   cuál le está hablando la página (las URL de Apps Script solo se diferencian
+   en esta parte). Se muestra en pantalla si algo no cierra. */
+const DEPLOY_ID_ = ((API_URL.match(/\/s\/([^/]+)/) || ['', '?'])[1]).slice(0, 14) + '…';
 /* La contraseña NO está en este archivo: la valida el Apps Script. */
 /* =================================================== */
 
@@ -399,7 +403,7 @@ function cargarClientesComex_(lista){
     ? `· ${nombres.length} en la lista`
     : (respondio
         ? '· el Apps Script está actualizado, pero no encontró la hoja «Datos Clientes Comex»'
-        : '· el Apps Script sigue en la versión vieja (o la página apunta a otra implementación)');
+        : '· el Apps Script sigue en la versión vieja · esta página está llamando a la implementación ' + DEPLOY_ID_);
   st.style.color = nombres.length ? 'var(--ok)' : '#b45309';
   // Sin lista no se puede elegir nada: se abre el campo de texto para que la
   // página siga siendo usable a mano.
