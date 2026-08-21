@@ -368,7 +368,14 @@ function comboCambio_(idSel, idInp, alCambiar){
 
 /* ===== clientes de la hoja "Datos Clientes Comex" ===== */
 function cargarClientesComex_(lista){
-  CLIENTES_LISTA = Array.isArray(lista) ? lista : [];
+  // Distinguir DOS problemas que se ven igual pero se arreglan distinto:
+  //  · lista === undefined  → la respuesta ni siquiera trae el campo, o sea que
+  //    el Apps Script publicado es el viejo (falta implementar Nueva versión,
+  //    o la página está apuntando a otra implementación).
+  //  · lista === []         → el Apps Script nuevo SÍ está publicado, pero leyó
+  //    la hoja y no encontró nada (nombre de hoja distinto, hoja vacía, etc.).
+  const respondio = Array.isArray(lista);
+  CLIENTES_LISTA = respondio ? lista : [];
   // Un mismo nombre corto puede estar cargado varias veces con distinto país
   // (ej. PLATINO en Guatemala y en El Salvador), así que cada nombre guarda
   // una LISTA de fichas, no una sola.
@@ -379,12 +386,16 @@ function cargarClientesComex_(lista){
     (CLIENTES[k] = CLIENTES[k] || []).push(c);
   });
   const nombres = Object.keys(CLIENTES).map(k => CLIENTES[k][0].nombre);
-  armarCombo_('pfClienteSel', 'pfCliente', nombres,
-              '⚠ lista vacía — falta implementar el Apps Script');
+  const aviso = respondio
+    ? '⚠ el Apps Script responde, pero la hoja volvió vacía'
+    : '⚠ falta implementar el Apps Script con «Nueva versión»';
+  armarCombo_('pfClienteSel', 'pfCliente', nombres, aviso);
   const st = document.getElementById('cliState');
   st.textContent = nombres.length
     ? `· ${nombres.length} en la lista`
-    : '· lista vacía — el Apps Script quedó en la versión vieja';
+    : (respondio
+        ? '· el Apps Script está actualizado, pero no encontró la hoja «Datos Clientes Comex»'
+        : '· el Apps Script sigue en la versión vieja (o la página apunta a otra implementación)');
   st.style.color = nombres.length ? 'var(--ok)' : '#b45309';
   // Sin lista no se puede elegir nada: se abre el campo de texto para que la
   // página siga siendo usable a mano.
