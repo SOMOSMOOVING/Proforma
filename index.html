@@ -273,7 +273,10 @@ document.getElementById('passInput').addEventListener('keydown', e => { if(e.key
 async function loadLists(){
   const badge = document.getElementById('listState');
   try{
-    const res = await fetch(API_URL + '?pass=' + encodeURIComponent(PASS));
+    // Solo lo necesario para entrar: listas y clientes. El catálogo de SKU es
+    // lo pesado (1.859 productos) y se pide aparte, mientras ya estás usando la
+    // página. Antes se esperaba por todo junto y por eso el ingreso tardaba.
+    const res = await fetch(API_URL + '?parte=basico&pass=' + encodeURIComponent(PASS));
     const data = await res.json();
     if(!data.ok){
       if(data.error === 'AUTH'){
@@ -295,14 +298,44 @@ async function loadLists(){
       tr.querySelectorAll('select').forEach(refreshRowSelect);
       applySku_(tr);
     });
-    badge.textContent = `listas actualizadas · ${Object.keys(SKUS).length} SKU en catálogo`;
+    badge.textContent = 'listas actualizadas · cargando catálogo…';
     badge.style.background = '#f0fdf4'; badge.style.color = '#166534';
+    if(!Object.keys(SKUS).length) cargarSkus_();   // el catálogo, por atrás
     return true;
   }catch(e){
     badge.textContent = 'no se pudieron cargar las listas';
     badge.style.background = '#fef2f2'; badge.style.color = '#991b1b';
     return false;
   }
+}
+
+/* El catálogo de SKU se trae aparte, sin frenar el ingreso. Mientras no esté,
+   la página funciona igual: lo único que falta es que se completen solos
+   Categoría, Licencia, Sello y el EAN. */
+let SKUS_LISTOS = false, SKUS_PIDIENDO = null;
+function cargarSkus_(){
+  if(SKUS_LISTOS) return Promise.resolve(true);
+  if(SKUS_PIDIENDO) return SKUS_PIDIENDO;
+  const badge = document.getElementById('listState');
+  SKUS_PIDIENDO = fetch(API_URL + '?parte=skus&pass=' + encodeURIComponent(PASS))
+    .then(r => r.json())
+    .then(d => {
+      if(!d.ok || !d.skus) throw new Error(d.error || 'sin catálogo');
+      SKUS = d.skus;
+      SKUS_LISTOS = true;
+      badge.textContent = `listas actualizadas · ${Object.keys(SKUS).length} SKU en catálogo`;
+      // lo que ya esté en pantalla se completa ahora
+      document.querySelectorAll('#items tr').forEach(tr => applySku_(tr));
+      if(typeof NP !== 'undefined' && NP) renderPreview();
+      return true;
+    })
+    .catch(() => {
+      badge.textContent = 'listas actualizadas · el catálogo de SKU no cargó';
+      badge.style.background = '#fef3c7'; badge.style.color = '#92400e';
+      SKUS_PIDIENDO = null;    // para poder reintentar
+      return false;
+    });
+  return SKUS_PIDIENDO;
 }
 function fillSelect(id, opts, empty){
   const el = typeof id === 'string' ? document.getElementById(id) : id;
@@ -778,7 +811,8 @@ function tipoDeArchivo_(wb){
 }
 
 /* ===== solapa 1: cargar proforma ===== */
-function parseProforma(file){
+async function parseProforma(file){
+  await cargarSkus_();   // si el catálogo todavía no llegó, se espera acá
   readWB_(file, wb => {
     const t = tipoDeArchivo_(wb);
     // Si el archivo tiene marcas claras de nota de pedido, ni se intenta leer
@@ -957,7 +991,8 @@ dropNP.addEventListener('drop', e => { e.preventDefault(); dropNP.classList.remo
 fileNP.addEventListener('change', () => { if(fileNP.files[0]) parseNota(fileNP.files[0]); });
 
 /* ===== solapa 2: cargar nota de pedido ===== */
-function parseNota(file){
+async function parseNota(file){
+  await cargarSkus_();   // si el catálogo todavía no llegó, se espera acá
   readWB_(file, wb => {
     const t = tipoDeArchivo_(wb);
     // Si el archivo tiene marcas claras de proforma, ni se intenta leer como
