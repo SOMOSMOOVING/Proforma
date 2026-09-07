@@ -208,7 +208,7 @@
       <p class="hint">Categoría, Licencia y Sello se completan solos según el SKU, tomando cómo se cargó ese mismo SKU en el histórico del Dashboard. Si es un SKU nuevo quedan vacíos para que los elijas.</p>
       <div class="totalbar">
         <button class="btn btn-ghost" onclick="addItem()">+ Agregar ítem</button>
-        <div class="total">Total: <span id="grandTotal">USD 0.00</span></div>
+        <div class="total"><span id="grandQty" style="font-weight:400;color:var(--muted);margin-right:14px"></span>Total: <span id="grandTotal">USD 0.00</span></div>
       </div>
     </div>
 
@@ -554,15 +554,21 @@ function addItem(data = {}){
 }
 function esc(s){ return String(s).replace(/"/g,'&quot;'); }
 function recalc(){
-  let total = 0;
+  let total = 0, unidades = 0, conDatos = 0;
   document.querySelectorAll('#items tr').forEach(tr => {
     const q = parseFloat(tr.querySelector('.i-qty').value) || 0;
     const p = parseFloat(tr.querySelector('.i-price').value) || 0;
     const s = q * p;
     tr.querySelector('.i-sub').textContent = s ? fmt(s) : '—';
     total += s;
+    unidades += q;
+    // se cuentan solo las filas con algo cargado, para no sumar la fila vacía
+    if(tr.querySelector('.i-sku').value.trim() || tr.querySelector('.i-desc').value.trim()) conDatos++;
   });
   document.getElementById('grandTotal').textContent = 'USD ' + fmt(total);
+  document.getElementById('grandQty').textContent = conDatos
+    ? `${conDatos} ítem${conDatos === 1 ? '' : 's'} · ${unidades.toLocaleString('en-US')} unidades ·`
+    : '';
 }
 function fmt(n){ return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
