@@ -3,6 +3,28 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Política de seguridad de contenido. GitHub Pages no permite configurar
+     cabeceras HTTP, pero esta versión en <meta> cumple casi lo mismo: limita
+     de dónde puede cargarse código y a dónde puede mandar datos la página.
+     Si algún día vuelve a colarse un XSS, esto acota el daño: el código
+     inyectado no puede traer un script de afuera ni mandar los datos a otro
+     servidor. Si se agrega una librería nueva, hay que sumarla acá. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'none';
+  script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com;
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data:;
+  font-src 'self' data:;
+  connect-src 'self' https://script.google.com https://script.googleusercontent.com;
+  form-action 'none';
+  base-uri 'none';
+  object-src 'none'">
+<!-- Nota: 'frame-ancestors' (evitar que otro sitio meta la página dentro de un
+     marco invisible) NO funciona en <meta>, solo como cabecera HTTP, y GitHub
+     Pages no permite configurar cabeceras. Es una limitación conocida del
+     alojamiento, no un olvido. Se resolvería moviendo la página a un hosting
+     que permita cabeceras, o al propio Apps Script. -->
+<meta name="referrer" content="no-referrer">
 <title>Mooving — Comex</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
@@ -270,14 +292,27 @@ async function doLogin(){
 document.getElementById('passInput').addEventListener('keydown', e => { if(e.key === 'Enter') doLogin(); });
 
 /* ================== LISTAS + CATALOGO SKU ================== */
+/* Le pide datos al Apps Script SIEMPRE por POST.
+   Antes se pedían por GET con ?pass=... en la dirección, y eso deja la
+   contraseña escrita en el historial del navegador y en los registros del
+   servidor de Google. En el cuerpo de un POST no queda en ningún lado.
+   El 'text/plain' es a propósito: evita el pedido previo de CORS, que Apps
+   Script no responde bien. */
+function pedir_(parte){
+  return fetch(API_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'text/plain;charset=utf-8'},
+    body: JSON.stringify({ pass: PASS, accion: 'leer', parte: parte })
+  }).then(r => r.json());
+}
+
 async function loadLists(){
   const badge = document.getElementById('listState');
   try{
     // Solo lo necesario para entrar: listas y clientes. El catálogo de SKU es
     // lo pesado (1.859 productos) y se pide aparte, mientras ya estás usando la
     // página. Antes se esperaba por todo junto y por eso el ingreso tardaba.
-    const res = await fetch(API_URL + '?parte=basico&pass=' + encodeURIComponent(PASS));
-    const data = await res.json();
+    const data = await pedir_('basico');
     if(!data.ok){
       if(data.error === 'AUTH'){
         showLogin(document.getElementById('passInput').value ? 'Contraseña incorrecta' : '');
@@ -317,8 +352,7 @@ function cargarSkus_(){
   if(SKUS_LISTOS) return Promise.resolve(true);
   if(SKUS_PIDIENDO) return SKUS_PIDIENDO;
   const badge = document.getElementById('listState');
-  SKUS_PIDIENDO = fetch(API_URL + '?parte=skus&pass=' + encodeURIComponent(PASS))
-    .then(r => r.json())
+  SKUS_PIDIENDO = pedir_('skus')
     .then(d => {
       if(!d.ok || !d.skus) throw new Error(d.error || 'sin catálogo');
       SKUS = d.skus;
@@ -337,11 +371,20 @@ function cargarSkus_(){
     });
   return SKUS_PIDIENDO;
 }
+/* Se arma con el DOM y no con HTML: así un valor raro que venga del Sheet
+   (por ejemplo un nombre de cliente con < >) entra como TEXTO y nunca como
+   código. Antes esto era el agujero más directo: lo que estuviera escrito en
+   la hoja se ejecutaba en la página de todos. */
 function fillSelect(id, opts, empty){
   const el = typeof id === 'string' ? document.getElementById(id) : id;
   const cur = el.value;
-  el.innerHTML = (empty ? '<option value=""></option>' : '') +
-    opts.map(o => `<option>${o}</option>`).join('');
+  el.textContent = '';
+  if(empty) el.appendChild(new Option('', ''));
+  (opts || []).forEach(o => {
+    const op = document.createElement('option');
+    op.textContent = String(o == null ? '' : o);   // textContent, no innerHTML
+    el.appendChild(op);
+  });
   if(cur) el.value = cur;
 }
 function refreshRowSelect(sel){
@@ -534,11 +577,11 @@ function addItem(data = {}){
   const tb = document.getElementById('items');
   const tr = document.createElement('tr');
   tr.innerHTML = `
-    <td><input class="i-sku" value="${data.sku ?? ''}"></td>
+    <td><input class="i-sku" value="${esc(data.sku ?? '')}"></td>
     <td><input class="i-desc" value="${esc(data.descripcion ?? '')}"></td>
     <td><select class="i-cat" data-kind="categorias"></select></td>
-    <td><input class="i-qty" type="number" min="0" value="${data.qty ?? ''}"></td>
-    <td><input class="i-price" type="number" step="0.0001" min="0" value="${data.fobVta ?? ''}"></td>
+    <td><input class="i-qty" type="number" min="0" value="${esc(data.qty ?? '')}"></td>
+    <td><input class="i-price" type="number" step="0.0001" min="0" value="${esc(data.fobVta ?? '')}"></td>
     <td><select class="i-lic" data-kind="licencias"></select></td>
     <td><select class="i-sello" data-kind="sellos"></select></td>
     <td class="subtotal i-sub">—</td>
@@ -552,7 +595,19 @@ function addItem(data = {}){
   recalc();
   return tr;
 }
-function esc(s){ return String(s).replace(/"/g,'&quot;'); }
+/* Escapa TODO lo que puede romper el HTML, no solo las comillas.
+   Antes solo cambiaba " por &quot;, así que un texto como
+   <img src=x onerror=...> dentro de la descripción de un Excel se insertaba
+   tal cual y el navegador lo ejecutaba. Sirve igual para texto y para
+   atributos. El & va primero, si no se re-escapan los demás. */
+function esc(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 function recalc(){
   let total = 0, unidades = 0, conDatos = 0;
   document.querySelectorAll('#items tr').forEach(tr => {
