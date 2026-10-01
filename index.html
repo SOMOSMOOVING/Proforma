@@ -490,13 +490,38 @@ function pedir_(parte){
   }).then(r => r.json());
 }
 
+/* Reintenta un pedido cuando falla la conexión o el Apps Script da un error
+   pasajero (por ejemplo, Google Sheets que tarda en responder después de un
+   rato sin uso). NUNCA reintenta AUTH ni BLOQUEADO: eso no es pasajero, y
+   cada reintento con la clave mala sumaría un intento fallido al bloqueo.
+   alReintentar(n) avisa en pantalla que se está reintentando. */
+const ESPERAS_REINTENTO_ = [1500, 4000];      // reintentos: a los 1,5 s y a los 4 s
+async function pedirConReintentos_(parte, alReintentar){
+  for(let n = 0; ; n++){
+    try{
+      const d = await pedir_(parte);
+      if(d.ok || d.error === 'AUTH' || d.error === 'BLOQUEADO' || n >= ESPERAS_REINTENTO_.length) return d;
+      console.warn(`Pedido "${parte}": el servidor respondió "${d.error}" (intento ${n + 1}). Reintentando…`);
+    }catch(err){
+      if(n >= ESPERAS_REINTENTO_.length) throw err;
+      console.warn(`Pedido "${parte}": falló la conexión (${err.message}, intento ${n + 1}). Reintentando…`);
+    }
+    if(alReintentar) alReintentar(n + 1);
+    await new Promise(r => setTimeout(r, ESPERAS_REINTENTO_[n]));
+  }
+}
+
 async function loadLists(){
   const badge = document.getElementById('listState');
   try{
     // Solo lo necesario para entrar: listas y clientes. El catálogo de SKU es
     // lo pesado (1.859 productos) y se pide aparte, mientras ya estás usando la
     // página. Antes se esperaba por todo junto y por eso el ingreso tardaba.
-    const data = await pedir_('basico');
+    const data = await pedirConReintentos_('basico', n => {
+      badge.textContent = `Conectando (reintento ${n})…`;
+      const lbl = document.querySelector('#loginBtn .btn-label');
+      if(lbl) lbl.textContent = `Reintentando (${n})…`;
+    });
     if(!data.ok){
       if(data.error === 'AUTH'){
         showLogin(document.getElementById('passInput').value ? 'Contraseña incorrecta' : '');
@@ -550,27 +575,21 @@ const MSG_BLOQUEADO_ = 'Hubo demasiados intentos fallidos y el acceso quedó blo
    Categoría, Licencia, Sello y el EAN. */
 /* El primer pedido del catálogo después de un rato sin uso es el más pesado:
    el Apps Script lo arma desde cero leyendo todo el Dashboard, y ahí Google
-   Sheets a veces falla de forma pasajera. Por eso se reintenta solo, con
-   esperas crecientes, antes de dar el aviso. El motivo del último error queda
-   en el aviso (al pasar el mouse) y en la consola, para poder diagnosticarlo. */
+   Sheets a veces falla de forma pasajera. Por eso se reintenta solo (ver
+   pedirConReintentos_) antes de dar el aviso. El motivo del último error
+   queda en el aviso (al pasar el mouse) y en la consola. */
 let SKUS_LISTOS = false, SKUS_PIDIENDO = null;
-const SKUS_ESPERAS_ = [2000, 5000];        // reintentos: a los 2 s y a los 5 s
 function cargarSkus_(){
   if(SKUS_LISTOS) return Promise.resolve(true);
   if(SKUS_PIDIENDO) return SKUS_PIDIENDO;
   const badge = document.getElementById('listState');
-  const intento = n => pedir_('skus')
+  SKUS_PIDIENDO = pedirConReintentos_('skus', n => {
+      badge.textContent = `Conectado · cargando catálogo (reintento ${n})…`;
+    })
     .then(d => {
       if(!d.ok || !d.skus) throw new Error(d.error || 'la respuesta no trajo el catálogo');
       return d;
     })
-    .catch(err => {
-      if(n >= SKUS_ESPERAS_.length) throw err;
-      console.warn(`Catálogo de SKU: falló el intento ${n + 1} (${err.message}). Reintentando…`);
-      badge.textContent = `Conectado · cargando catálogo (reintento ${n + 1})…`;
-      return new Promise(r => setTimeout(r, SKUS_ESPERAS_[n])).then(() => intento(n + 1));
-    });
-  SKUS_PIDIENDO = intento(0)
     .then(d => {
       SKUS = d.skus;
       SKUS_LISTOS = true;
