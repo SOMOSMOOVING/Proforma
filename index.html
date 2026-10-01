@@ -455,6 +455,10 @@ function showLogin(err){
   const e = document.getElementById('loginErr');
   if(err){ e.style.display = 'block'; e.textContent = err; }
   else e.style.display = 'none';
+  // El botón siempre vuelve a "Entrar": si antes hubo reintentos, podía
+  // quedar diciendo "Reintentando (2)…".
+  const btn = document.getElementById('loginBtn');
+  btn.classList.remove('loading'); btn.querySelector('.btn-label').textContent = 'Entrar';
   setTimeout(() => document.getElementById('passInput').focus(), 50);
   grilla_().arrancar();
 }
@@ -465,8 +469,12 @@ function hideLogin(){
 async function doLogin(){
   const p = document.getElementById('passInput').value;
   if(!p) return;
-  PASS = p;
   const btn = document.getElementById('loginBtn');
+  // Si ya hay un intento en curso no se manda otro. La clase "loading" solo
+  // frena el mouse; sin esto, dos Enter seguidos mandaban dos intentos (y con
+  // una clave mala sumaban dos fallos al bloqueo).
+  if(btn.classList.contains('loading')) return;
+  PASS = p;
   btn.classList.add('loading'); btn.querySelector('.btn-label').textContent = 'Entrando…';
   const ok = await loadLists();
   btn.classList.remove('loading'); btn.querySelector('.btn-label').textContent = 'Entrar';
@@ -483,11 +491,18 @@ document.getElementById('passInput').addEventListener('keydown', e => { if(e.key
    El 'text/plain' es a propósito: evita el pedido previo de CORS, que Apps
    Script no responde bien. */
 function pedir_(parte){
+  // Los errores de red se marcan con deRed: JavaScript usa el mismo tipo de
+  // error (TypeError) para "no hubo conexión" y para un error de programación,
+  // y la página tiene que poder distinguirlos al avisar.
+  const deRed = e => { e.deRed = true; throw e; };
   return fetch(API_URL, {
     method: 'POST',
     headers: {'Content-Type': 'text/plain;charset=utf-8'},
     body: JSON.stringify({ pass: PASS, accion: 'leer', parte: parte })
-  }).then(r => r.json());
+  }).then(
+    r => r.json().catch(deRed),   // llegó algo que no es JSON (una página de error de Google)
+    deRed                         // no hubo conexión
+  );
 }
 
 /* Reintenta un pedido cuando falla la conexión o el Apps Script da un error
@@ -523,20 +538,28 @@ async function loadLists(){
       if(lbl) lbl.textContent = `Reintentando (${n})…`;
     });
     if(!data.ok){
-      if(data.error === 'AUTH'){
-        showLogin(document.getElementById('passInput').value ? 'Contraseña incorrecta' : '');
+      if(data.error === 'AUTH' || data.error === 'BLOQUEADO'){
+        // Se escribió una clave, o se usó la guardada en el navegador.
+        const escrita = !!document.getElementById('passInput').value;
+        const habiaGuardada = !escrita && !!PASS;
+        // Una clave guardada que ya no sirve se borra: si no, cada recarga de
+        // la página la volvía a mandar y sumaba un intento fallido al bloqueo.
+        PASS = ''; sessionStorage.removeItem('mv_pass');
+        showLogin(data.error === 'BLOQUEADO' ? MSG_BLOQUEADO_
+          : escrita ? MSG_CLAVE_MALA_
+          : habiaGuardada ? MSG_CLAVE_VENCIDA_ : '');
         badge.textContent = 'Esperando contraseña';
         return false;
       }
-      if(data.error === 'BLOQUEADO'){
-        showLogin(MSG_BLOQUEADO_);
-        badge.textContent = 'Esperando contraseña';
-        return false;
-      }
-      throw new Error(data.error);
+      // Error que mandó el Apps Script (se marca para no confundirlo con un
+      // error de la propia página, ver el catch).
+      throw Object.assign(new Error(data.error), { delServidor: true });
     }
     LISTS = data.lists;
-    SKUS  = data.skus || {};
+    // 'basico' no trae el catálogo; solo se toca si viene (página vieja o, más
+    // adelante, Supabase). Antes esto lo vaciaba siempre: si la sesión vencía
+    // y se volvía a ingresar, el catálogo quedaba vacío hasta recargar.
+    if(data.skus){ SKUS = data.skus; SKUS_LISTOS = true; }
     FIRMA_B64 = data.firma || '';   // si viene vacía, el Apps Script publicado es el viejo
     // El desplegable de esta solapa combina las dos fuentes: la validación del
     // Dashboard (que es la que manda para que el Sheet acepte la fila) más los
@@ -548,37 +571,47 @@ async function loadLists(){
       tr.querySelectorAll('select').forEach(refreshRowSelect);
       applySku_(tr);
     });
-    badge.textContent = 'Conectado · cargando catálogo…';
     badge.dataset.estado = 'ok';
-    if(!Object.keys(SKUS).length) cargarSkus_();   // el catálogo, por atrás
+    if(SKUS_LISTOS) mostrarCatalogoListo_(badge);
+    else { badge.textContent = 'Conectado · cargando catálogo…'; cargarSkus_(); }   // el catálogo, por atrás
     return true;
   }catch(e){
     badge.textContent = 'Sin conexión';
     badge.dataset.estado = 'err';
     // Antes esto solo cambiaba el badge, que queda tapado por la pantalla de
     // contraseña: apretabas "Entrar" y no pasaba nada. Ahora se avisa ahí.
-    // TypeError = no hubo conexión; SyntaxError = llegó algo que no es JSON
-    // (una página de error de Google). Lo demás es un error que mandó el Apps Script.
-    const sinRed = e instanceof TypeError || e instanceof SyntaxError;
-    showLogin((sinRed
-      ? 'No se pudo conectar con el servidor. Revisá la conexión y probá de nuevo.'
-      : 'El servidor respondió con un error: ' + e.message + '.') +
-      ' Implementación: ' + DEPLOY_ID_);
+    // Tres casos distintos:
+    //   - el Apps Script mandó un error (delServidor);
+    //   - no hubo conexión, o llegó algo que no es JSON (deRed, ver pedir_);
+    //   - cualquier otra cosa es un error de la propia página.
+    const sinRed = !!(e && e.deRed);
+    const motivo = e && e.delServidor ? 'El servidor respondió con un error: ' + e.message + '.'
+      : sinRed ? 'No se pudo conectar con el servidor. Revisá la conexión y probá de nuevo.'
+      : 'Error inesperado en la página: ' + (e && e.message ? e.message : e) + '. Recargá con Ctrl+F5.';
+    if(!sinRed && !(e && e.delServidor)) console.error(e);
+    showLogin(motivo + ' Implementación: ' + DEPLOY_ID_);
     return false;
   }
 }
 const MSG_BLOQUEADO_ = 'Hubo demasiados intentos fallidos y el acceso quedó bloqueado por 15 minutos. ' +
   'La contraseña puede estar bien: esperá y probá de nuevo.';
+const MSG_CLAVE_MALA_ = 'Contraseña incorrecta';
+const MSG_CLAVE_VENCIDA_ = 'La contraseña guardada ya no es válida (¿cambió?). Ingresala de nuevo.';
 
 /* El catálogo de SKU se trae aparte, sin frenar el ingreso. Mientras no esté,
    la página funciona igual: lo único que falta es que se completen solos
-   Categoría, Licencia, Sello y el EAN. */
-/* El primer pedido del catálogo después de un rato sin uso es el más pesado:
-   el Apps Script lo arma desde cero leyendo todo el Dashboard, y ahí Google
-   Sheets a veces falla de forma pasajera. Por eso se reintenta solo (ver
-   pedirConReintentos_) antes de dar el aviso. El motivo del último error
-   queda en el aviso (al pasar el mouse) y en la consola. */
+   Categoría, Licencia, Sello y el EAN.
+   El primer pedido después de un rato sin uso es el más pesado (el Apps
+   Script lo arma leyendo todo el Dashboard) y ahí Google Sheets a veces falla
+   de forma pasajera: por eso se reintenta solo (ver pedirConReintentos_)
+   antes de dar el aviso. El motivo del último error queda en el aviso (al
+   pasar el mouse) y en la consola. */
 let SKUS_LISTOS = false, SKUS_PIDIENDO = null;
+function mostrarCatalogoListo_(badge){
+  badge.textContent = `Conectado · ${Object.keys(SKUS).length.toLocaleString('es-AR')} SKU en catálogo`;
+  badge.dataset.estado = 'ok';          // por si venía en naranja de un fallo anterior
+  badge.removeAttribute('title');
+}
 function cargarSkus_(){
   if(SKUS_LISTOS) return Promise.resolve(true);
   if(SKUS_PIDIENDO) return SKUS_PIDIENDO;
@@ -593,17 +626,15 @@ function cargarSkus_(){
     .then(d => {
       SKUS = d.skus;
       SKUS_LISTOS = true;
-      badge.textContent = `Conectado · ${Object.keys(SKUS).length.toLocaleString('es-AR')} SKU en catálogo`;
-      badge.dataset.estado = 'ok';          // por si venía en naranja de un fallo anterior
-      badge.removeAttribute('title');
+      mostrarCatalogoListo_(badge);
       // lo que ya esté en pantalla se completa ahora
       document.querySelectorAll('#items tr').forEach(tr => applySku_(tr));
-      if(typeof NP !== 'undefined' && NP) renderPreview();
+      if(NP) renderPreview();
       return true;
     })
     .catch(err => {
       const motivo = err && err.message ? err.message : String(err);
-      console.warn('Catálogo de SKU: no cargó después de 3 intentos: ' + motivo);
+      console.warn(`Catálogo de SKU: no cargó después de ${ESPERAS_REINTENTO_.length + 1} intentos: ${motivo}`);
       badge.textContent = 'Conectado · el catálogo de SKU no cargó';
       badge.title = 'Motivo: ' + motivo + '. Se vuelve a intentar al subir un archivo.';
       badge.dataset.estado = 'warn';
