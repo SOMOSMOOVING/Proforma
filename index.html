@@ -8,13 +8,15 @@
      de dónde puede cargarse código y a dónde puede mandar datos la página.
      Si algún día vuelve a colarse un XSS, esto acota el daño: el código
      inyectado no puede traer un script de afuera ni mandar los datos a otro
-     servidor. Si se agrega una librería nueva, hay que sumarla acá. -->
+     servidor. Si se agrega una librería nueva, hay que sumarla acá.
+     Google Fonts (Inter y JetBrains Mono) necesita fonts.googleapis.com para
+     el CSS y fonts.gstatic.com para los archivos de letra. -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
   script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.sheetjs.com;
-  style-src 'self' 'unsafe-inline';
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   img-src 'self' data:;
-  font-src 'self' data:;
+  font-src 'self' data: https://fonts.gstatic.com;
   connect-src 'self' https://script.google.com https://script.googleusercontent.com;
   form-action 'none';
   base-uri 'none';
@@ -26,6 +28,9 @@
      que permita cabeceras, o al propio Apps Script. -->
 <meta name="referrer" content="no-referrer">
 <title>Mooving — Comex</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <!-- SheetJS (lee los Excel que se suben). La 0.18.5 de cdnjs tenía dos fallas
      conocidas al abrir archivos armados a propósito (CVE-2023-30533 y
      CVE-2024-22363); la 0.20.3 las corrige, pero SheetJS ya no la publica en
@@ -40,217 +45,365 @@
         integrity="sha512-dlPw+ytv/6JyepmelABrgeYgHI0O+frEwgfnPdXDTOIZz+eDgfW07QXG02/O8COfivBdGNINy+Vex+lYmJ5rxw=="
         crossorigin="anonymous"></script>
 <style>
+  /* ===== Sistema de diseño =====
+     Minimalista y funcional (herramienta de trabajo, no landing).
+     Un solo color de acción: el rojo Mooving. El #e8443a original no llega al
+     contraste mínimo con texto blanco (3,9:1, hace falta 4,5:1), así que los
+     botones y textos usan el tono oscuro #c93830 (5,1:1) y el claro queda
+     solo para detalles decorativos. */
   :root{
-    --bg:#f4f5f7; --card:#ffffff; --ink:#1a1d24; --muted:#6b7280;
-    --brand:#e8443a; --brand-dark:#c93830; --line:#e5e7eb; --ok:#16a34a;
+    --bg:#f8fafc; --card:#ffffff; --ink:#0f172a; --ink-2:#334155;
+    --muted:#475569; --subtle:#64748b; --line:#e2e8f0; --line-strong:#cbd5e1; --hover:#f1f5f9;
+    --brand:#c93830; --brand-hover:#a92e27; --brand-deco:#e8443a; --brand-tint:#fdf2f1;
+    --ok:#15803d; --ok-bg:#f0fdf4; --ok-line:#bbf7d0;
+    --warn:#b45309; --warn-bg:#fffbeb; --warn-line:#fde68a;
+    --err:#b91c1c; --err-bg:#fef2f2; --err-line:#fecaca;
+    --ring:#0369a1;
+    --r:8px; --r-lg:12px; --dur:180ms;
+    --font:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,'Cascadia Mono',Consolas,monospace;
+    /* íconos de los mensajes (SVG de Lucide, con el color ya puesto) */
+    --i-ok:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2315803d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E");
+    --i-warn:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b45309' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3'/%3E%3Cpath d='M12 9v4'/%3E%3Cpath d='M12 17h.01'/%3E%3C/svg%3E");
+    --i-err:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b91c1c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v4'/%3E%3Cpath d='M12 16h.01'/%3E%3C/svg%3E");
+    --i-check:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
   }
   *{box-sizing:border-box; margin:0; padding:0;}
-  body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif; background:var(--bg); color:var(--ink); padding:24px 16px 80px;}
-  .wrap{max-width:1080px; margin:0 auto;}
-  h1{font-size:1.5rem; margin-bottom:4px;}
-  .sub{color:var(--muted); margin-bottom:18px;}
-  .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; margin-bottom:20px;}
-  .card h2{font-size:1.05rem; margin-bottom:14px;}
-  label{display:block; font-size:.8rem; font-weight:600; color:var(--muted); margin-bottom:4px; text-transform:uppercase; letter-spacing:.03em;}
-  input,select{width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px; font-size:.95rem; background:#fff;}
-  input:focus,select:focus{outline:2px solid var(--brand); border-color:transparent;}
-  .grid{display:grid; gap:14px;}
-  .g4{grid-template-columns:repeat(4,1fr);}
-  .g2{grid-template-columns:repeat(2,1fr);}
-  .g5{grid-template-columns:1.3fr .9fr 1.2fr 1fr 1fr;}
-  .g3{grid-template-columns:repeat(3,1fr);}
-  @media(max-width:760px){.g4{grid-template-columns:1fr 1fr;} .g5{grid-template-columns:1fr 1fr;} .g3{grid-template-columns:1fr;}}
-  /* tabs */
-  .tabs{display:flex; gap:8px; margin-bottom:20px;}
-  .tab{padding:10px 22px; border-radius:99px; border:1px solid var(--line); background:#fff; font-weight:600; font-size:.95rem; cursor:pointer; color:var(--muted);}
-  .tab.active{background:var(--brand); border-color:var(--brand); color:#fff;}
-  /* login */
-  #login{position:fixed; inset:0; background:var(--bg); z-index:50; display:flex; align-items:center; justify-content:center;}
-  #login .box{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:34px; width:min(360px, 90vw); text-align:center;}
-  #login h2{margin-bottom:6px;}
-  #login p{color:var(--muted); font-size:.9rem; margin-bottom:18px;}
-  #loginErr{color:#991b1b; font-size:.88rem; margin-top:10px; display:none;}
-  /* dropzones */
-  .drop{border:2px dashed #cbd5e1; border-radius:12px; padding:34px; text-align:center; cursor:pointer; transition:.15s; background:#fafbfc;}
-  .drop.over{border-color:var(--brand); background:#fff5f4;}
-  .drop p{color:var(--muted); font-size:.9rem;}
-  .drop strong{color:var(--brand);}
-  .parseInfo{margin-top:10px; font-size:.9rem; color:var(--ok); display:none;}
-  .parseWarn{margin-top:6px; font-size:.88rem; color:#b45309; display:none;}
-  .auto{background:#f0fdf4 !important;}
-  .hint{font-size:.82rem; color:var(--muted); margin-top:10px;}
-  /* tables */
-  table{width:100%; border-collapse:collapse; font-size:.88rem;}
-  th{text-align:left; padding:8px 6px; color:var(--muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.03em; border-bottom:2px solid var(--line);}
-  td{padding:6px 4px; border-bottom:1px solid var(--line); vertical-align:top;}
-  td input, td select{padding:7px 8px; font-size:.87rem;}
-  .del{background:none; border:none; color:#b91c1c; cursor:pointer; font-size:1.05rem; padding:6px;}
-  .subtotal{text-align:right; white-space:nowrap; padding-top:12px; font-variant-numeric:tabular-nums;}
+  body{font-family:var(--font); font-size:16px; line-height:1.5; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased;}
+  .ico{width:18px; height:18px; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round;}
+  :focus-visible{outline:2px solid var(--ring); outline-offset:2px;}
+  button{font:inherit; color:inherit;}
+
+  /* ===== encabezado ===== */
+  .topbar{background:var(--card); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20;}
+  .topbar-in{max-width:1120px; margin:0 auto; padding:10px 16px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
+  .brand{display:flex; align-items:center; gap:10px; margin-right:auto;}
+  .brand-logo{height:30px; width:auto; display:block;}
+  .brand-name{font-family:'Fredoka',var(--font); font-weight:600; font-size:18px; line-height:1; color:var(--ink); padding-left:10px; border-left:1px solid var(--line);}
+  .tabs{display:flex; gap:2px; background:var(--hover); border:1px solid var(--line); border-radius:10px; padding:3px;}
+  .tab{border:1px solid transparent; background:none; border-radius:7px; padding:7px 14px; min-height:36px; font-size:14px; font-weight:500; color:var(--muted); cursor:pointer; transition:background var(--dur), color var(--dur);}
+  .tab:hover{color:var(--ink);}
+  .tab.active{background:var(--card); color:var(--ink); border-color:var(--line); box-shadow:0 1px 2px rgba(15,23,42,.06);}
+  .status{display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--subtle); white-space:nowrap;}
+  .status::before{content:''; width:8px; height:8px; border-radius:50%; background:var(--line-strong);}
+  .status[data-estado="ok"]{color:var(--ok);}   .status[data-estado="ok"]::before{background:var(--ok);}
+  .status[data-estado="warn"]{color:var(--warn);} .status[data-estado="warn"]::before{background:var(--warn);}
+  .status[data-estado="err"]{color:var(--err);}  .status[data-estado="err"]::before{background:var(--err);}
+
+  .wrap{max-width:1120px; margin:0 auto; padding:20px 16px 32px;}
+
+  /* ===== pasos ===== */
+  .steps{list-style:none; display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 16px; font-size:14px; color:var(--subtle);}
+  .steps li{display:flex; align-items:center; gap:8px;}
+  .steps li + li::before{content:''; width:24px; height:1px; background:var(--line-strong); margin-right:0;}
+  .steps li[data-estado="actual"]{color:var(--ink); font-weight:600;}
+  .steps li[data-estado="hecho"]{color:var(--ok);}
+  .step-n{display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; border:1.5px solid var(--line-strong); font-size:12px; font-weight:600; color:var(--subtle); flex:none; background:var(--card);}
+  [data-estado="actual"] > .step-n, .step-n[data-estado="actual"]{border-color:var(--ink); color:var(--ink);}
+  [data-estado="hecho"] > .step-n, .step-n[data-estado="hecho"]{background:var(--ok) var(--i-check) center/12px no-repeat; border-color:var(--ok); color:transparent;}
+
+  /* ===== tarjetas ===== */
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--r-lg); padding:20px; margin-bottom:16px;}
+  .card h2{display:flex; align-items:center; gap:10px; font-size:16px; font-weight:600; margin-bottom:16px;}
+  .card h2 .opt{font-weight:400; color:var(--subtle); font-size:14px;}
+  label{display:block; font-size:13px; font-weight:500; color:var(--ink-2); margin-bottom:6px;}
+  .lbl-note{font-weight:400; color:var(--subtle);}
+  input,select{width:100%; min-height:40px; padding:8px 11px; border:1px solid var(--line-strong); border-radius:var(--r); font:inherit; font-size:15px; color:var(--ink); background:var(--card); transition:border-color var(--dur), box-shadow var(--dur);}
+  input:hover,select:hover{border-color:#94a3b8;}
+  input:focus,select:focus{outline:none; border-color:var(--ring); box-shadow:0 0 0 3px rgba(3,105,161,.18);}
+  input::placeholder{color:#94a3b8;}
+  .auto{background:var(--ok-bg) !important; border-color:var(--ok-line) !important;}
+  .invalido{border-color:var(--err) !important; background:var(--err-bg) !important; box-shadow:0 0 0 3px rgba(185,28,28,.12) !important;}
+  .grid{display:grid; gap:16px;}
+  .g3{grid-template-columns:repeat(3,minmax(0,1fr));}
+  .g4{grid-template-columns:repeat(4,minmax(0,1fr));}
+  .g5{grid-template-columns:1.3fr .9fr 1.1fr 1fr 1fr;}
+  .span2{grid-column:span 2;}
+  .mt{margin-top:16px;}
+  .hint{font-size:13px; color:var(--subtle); margin-top:12px; line-height:1.55;}
+
+  /* ===== zona para soltar archivos =====
+     El brillo que sigue al mouse está inspirado en SpotlightCard de React Bits
+     (c) David Haz — MIT + Commons Clause. Hecho en CSS puro para no sumar React. */
+  .drop{position:relative; overflow:hidden; border:1.5px dashed var(--line-strong); border-radius:var(--r-lg); padding:28px 20px; text-align:center; cursor:pointer; background:#fbfcfd; transition:border-color var(--dur), background var(--dur), padding var(--dur);}
+  .drop::before{content:''; position:absolute; inset:0; pointer-events:none; opacity:0; transition:opacity 300ms; background:radial-gradient(260px circle at var(--mx,50%) var(--my,50%), rgba(232,68,58,.10), transparent 70%);}
+  .drop:hover, .drop:focus-visible, .drop.over{border-color:var(--brand-deco);}
+  .drop:hover::before, .drop:focus-visible::before, .drop.over::before{opacity:1;}
+  .drop.over{background:var(--brand-tint);}
+  .drop .drop-ico{width:28px; height:28px; color:var(--brand); margin:0 auto 8px; display:block;}
+  .drop-title{font-size:15px; color:var(--ink-2);}
+  .drop-title strong{color:var(--brand); font-weight:600;}
+  .drop-sub{font-size:13px; color:var(--subtle); margin-top:2px;}
+  .drop.cargada{padding:12px 16px; display:flex; align-items:center; justify-content:center; gap:10px;}
+  .drop.cargada .drop-ico{width:18px; height:18px; margin:0;}
+  .drop.cargada .drop-sub{display:none;}
+  .drop.cargada .drop-title{font-size:14px;}
+
+  /* ===== mensajes ===== */
+  .parseInfo,.parseWarn,.msg{display:none; margin-top:12px; padding:10px 12px 10px 38px; border-radius:var(--r); font-size:14px; background-repeat:no-repeat; background-position:12px 11px; background-size:18px;}
+  .parseInfo{color:var(--ok); background-color:var(--ok-bg); border:1px solid var(--ok-line); background-image:var(--i-ok);}
+  .parseWarn{color:var(--warn); background-color:var(--warn-bg); border:1px solid var(--warn-line); background-image:var(--i-warn);}
+  .msg{margin:0 0 12px;}
+  .msg.ok{display:block; color:var(--ok); background-color:var(--ok-bg); border:1px solid var(--ok-line); background-image:var(--i-ok);}
+  .msg.err{display:block; color:var(--err); background-color:var(--err-bg); border:1px solid var(--err-line); background-image:var(--i-err);}
+
+  /* ===== tablas ===== */
+  .table-wrap{overflow-x:auto; margin:0 -20px; padding:0 20px;}
+  table{width:100%; border-collapse:collapse; font-size:14px;}
+  th{text-align:left; padding:8px 8px; color:var(--subtle); font-size:12px; font-weight:600; border-bottom:1px solid var(--line); white-space:nowrap;}
+  td{padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:middle;}
+  tbody tr:hover td{background:#fafbfc;}
+  td input, td select{min-height:36px; padding:6px 8px; font-size:14px;}
+  #items td{padding:6px 4px;}
+  #items td:first-child{padding-left:0;}
+  #items .i-qty, #items .i-price{text-align:right; font-variant-numeric:tabular-nums;}
   .num{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap;}
-  .btn{display:inline-block; border:none; border-radius:8px; padding:11px 20px; font-size:.95rem; font-weight:600; cursor:pointer;}
+  th.num{text-align:right;}
+  .code, .i-sku{font-family:var(--mono); font-size:13px;}
+  .subtotal{text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; color:var(--ink-2);}
+  .empty td{color:var(--subtle); padding:20px 8px; text-align:center;}
+  .del{display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; border:none; border-radius:var(--r); background:none; color:var(--subtle); cursor:pointer; transition:background var(--dur), color var(--dur);}
+  .del:hover{background:var(--err-bg); color:var(--err);}
+  .del .ico{width:16px; height:16px;}
+
+  /* ===== botones ===== */
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:42px; border:1px solid transparent; border-radius:var(--r); padding:9px 18px; font-size:15px; font-weight:600; cursor:pointer; transition:background var(--dur), border-color var(--dur), transform 80ms;}
+  .btn:active{transform:scale(.98);}
   .btn-brand{background:var(--brand); color:#fff;}
-  .btn-brand:hover{background:var(--brand-dark);}
-  .btn-ghost{background:#fff; border:1px solid var(--line); color:var(--ink);}
-  .totalbar{display:flex; justify-content:space-between; align-items:center; margin-top:14px; flex-wrap:wrap; gap:10px;}
-  .total{font-size:1.05rem; font-weight:700; font-variant-numeric:tabular-nums;}
-  .msg{margin-top:16px; padding:14px; border-radius:8px; display:none; font-size:.95rem;}
-  .msg.ok{display:block; background:#f0fdf4; border:1px solid #bbf7d0; color:#166534;}
-  .msg.err{display:block; background:#fef2f2; border:1px solid #fecaca; color:#991b1b;}
-  .loading{opacity:.55; pointer-events:none;}
-  .badge{display:inline-block; background:#eef2ff; color:#4338ca; border-radius:99px; padding:2px 10px; font-size:.75rem; font-weight:600; margin-left:8px;}
-  .sheetRow{display:flex; align-items:center; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); flex-wrap:wrap;}
-  .sheetRow .name{font-weight:600; min-width:180px;}
-  .sheetRow .count{color:var(--muted); font-size:.85rem;}
-  .sheetRow select{width:auto; min-width:130px;}
+  .btn-brand:hover{background:var(--brand-hover);}
+  .btn-ghost{background:var(--card); border-color:var(--line-strong); color:var(--ink);}
+  .btn-ghost:hover{background:var(--hover);}
+  .btn-block{width:100%;}
+  .loading{opacity:.6; pointer-events:none;}
+  .card-foot{display:flex; justify-content:space-between; align-items:center; margin-top:14px; gap:10px; flex-wrap:wrap;}
+
+  /* ===== barra de acción fija abajo ===== */
+  .actionbar{position:sticky; bottom:12px; z-index:10; display:flex; align-items:center; justify-content:space-between; gap:12px 20px; flex-wrap:wrap; background:var(--card); border:1px solid var(--line); border-radius:var(--r-lg); padding:12px 16px; box-shadow:0 6px 20px rgba(15,23,42,.08);}
+  .actionbar-info{font-size:14px; color:var(--muted); font-variant-numeric:tabular-nums;}
+  .actionbar-info:empty::before{content:attr(data-vacio); color:var(--subtle);}
+  .actionbar-cta{display:flex; align-items:center; gap:16px; margin-left:auto;}
+  .total{font-size:20px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-.01em;}
+
+  /* ===== login ===== */
+  #login{position:fixed; inset:0; background:var(--bg); z-index:50; display:flex; align-items:center; justify-content:center; padding:16px; overflow:hidden;}
+  #grilla{position:absolute; inset:0; width:100%; height:100%; display:block;}
+  /* fondo blanco a propósito: el logo PNG tiene fondo blanco, no transparente */
+  .login-box{position:relative; z-index:1; background:#fff; border:1px solid #e5e7eb; border-radius:18px; padding:34px 32px 30px; width:min(380px, 100%); box-shadow:0 24px 60px rgba(35,31,32,.10), 0 2px 6px rgba(35,31,32,.04);}
+  .login-lockup{display:flex; align-items:center; justify-content:center; gap:14px; margin-bottom:8px;}
+  .login-logo{height:34px; width:auto; display:block;}
+  .login-sep{width:1.5px; height:30px; background:var(--line-strong);}
+  .login-box h1{font-family:'Fredoka',var(--font); font-size:32px; font-weight:600; letter-spacing:.01em; line-height:1;}
+  .login-box > p{color:var(--muted); font-size:14px; text-align:center; margin:10px 0 24px;}
+  /* BlurText: cada letra de "Comex" entra desenfocada y se aclara.
+     Basado en BlurText de React Bits (c) David Haz — MIT + Commons Clause.
+     Hecho en CSS: el estado final es el normal, así que si la animación no
+     corre el título se lee igual. */
+  .blur span{display:inline-block; animation:blurIn .7s cubic-bezier(.2,.7,.2,1) both; animation-delay:calc(var(--i) * 70ms + 150ms);}
+  @keyframes blurIn{from{filter:blur(10px); opacity:0; transform:translateY(-6px);} to{filter:none; opacity:1; transform:none;}}
+  .login-box .btn{margin-top:14px;}
+  .sr-only{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;}
+  #loginErr{display:none; margin-top:12px; padding:10px 12px 10px 38px; border-radius:var(--r); font-size:14px; color:var(--err); background:var(--err-bg) var(--i-err) 12px 11px/18px no-repeat; border:1px solid var(--err-line);}
+
+  @media (max-width:900px){ .g5{grid-template-columns:1fr 1fr;} .g4{grid-template-columns:1fr 1fr;} }
+  @media (max-width:640px){
+    .topbar{position:static;}   /* en el celular el encabezado no queda fijo: ocupa mucho */
+    .g3,.g4,.g5{grid-template-columns:1fr;} .span2{grid-column:auto;}
+    .tabs{order:3; width:100%;} .tab{flex:1;}
+    .card{padding:16px;} .table-wrap{margin:0 -16px; padding:0 16px;}
+    .actionbar{bottom:8px;} .actionbar-cta{width:100%; justify-content:space-between; margin-left:0;}
+  }
+  @media (prefers-reduced-motion: reduce){ *{transition:none !important; animation:none !important;} }
 </style>
 </head>
 <body>
 
 <!-- LOGIN -->
-<div id="login">
-  <div class="box">
-    <h2>Mooving Comex</h2>
-    <p>Ingresá la contraseña para continuar</p>
-    <input type="password" id="passInput" placeholder="Contraseña" autofocus>
-    <button class="btn btn-brand" style="width:100%; margin-top:12px" onclick="doLogin()">Entrar</button>
-    <div id="loginErr"></div>
+<div id="login" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+  <canvas id="grilla" aria-hidden="true"></canvas>
+  <div class="login-box">
+    <div class="login-lockup">
+      <img class="login-logo" data-logo alt="Mooving">
+      <span class="login-sep" aria-hidden="true"></span>
+      <h1 id="loginTitle" class="blur" aria-label="Comex"><span style="--i:0" aria-hidden="true">C</span><span style="--i:1" aria-hidden="true">o</span><span style="--i:2" aria-hidden="true">m</span><span style="--i:3" aria-hidden="true">e</span><span style="--i:4" aria-hidden="true">x</span></h1>
+    </div>
+    <p>Ingresá la contraseña del equipo para continuar.</p>
+    <label for="passInput">Contraseña</label>
+    <input type="password" id="passInput" autocomplete="current-password" autofocus>
+    <button class="btn btn-brand btn-block" id="loginBtn" type="button" onclick="doLogin()"><span class="btn-label">Entrar</span></button>
+    <div id="loginErr" role="alert"></div>
   </div>
 </div>
 
-<div class="wrap">
-  <h1>Mooving Comex</h1>
-  <p class="sub">Generá una proforma desde una nota de pedido, o agregá una proforma al Sheets.</p>
-
-  <div class="tabs">
-    <button class="tab active" id="tabBtn2" onclick="switchTab(2)">Generar Proforma</button>
-    <button class="tab" id="tabBtn1" onclick="switchTab(1)">Agregar al Sheets</button>
+<header class="topbar">
+  <div class="topbar-in">
+    <div class="brand"><img class="brand-logo" data-logo alt="Mooving"><span class="brand-name">Comex</span></div>
+    <div class="tabs" role="tablist" aria-label="Secciones">
+      <button class="tab active" id="tabBtn2" role="tab" aria-selected="true" aria-controls="tab2" onclick="switchTab(2)">Generar proforma</button>
+      <button class="tab" id="tabBtn1" role="tab" aria-selected="false" aria-controls="tab1" tabindex="-1" onclick="switchTab(1)">Agregar al Sheets</button>
+    </div>
+    <span id="listState" class="status" role="status">Conectando…</span>
   </div>
+</header>
+
+<main class="wrap">
 
   <!-- ============ SOLAPA 2: GENERAR PROFORMA ============ -->
-  <div id="tab2">
+  <section id="tab2" role="tabpanel" aria-labelledby="tabBtn2">
+    <ol class="steps" aria-label="Pasos para generar la proforma">
+      <li data-paso="np"><span class="step-n">1</span>Nota de pedido</li>
+      <li data-paso="pfDatos"><span class="step-n">2</span>Datos del cliente</li>
+      <li data-paso="pfRevisar"><span class="step-n">3</span>Revisar y descargar</li>
+    </ol>
+
     <div class="card">
-      <h2>1 · Nota de pedido</h2>
-      <div id="dropNP" class="drop">
-        <p><strong>Arrastrá la nota de pedido acá</strong> o hacé clic para elegir el archivo (.xlsx / .xlsm / .xls)</p>
+      <h2><span class="step-n" data-paso="np">1</span>Nota de pedido</h2>
+      <div id="dropNP" class="drop" role="button" tabindex="0" aria-describedby="npHint">
+        <svg class="ico drop-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+        <p class="drop-title" data-vacio="&lt;strong&gt;Arrastrá la nota de pedido acá&lt;/strong&gt; o hacé clic para elegirla"><strong>Arrastrá la nota de pedido acá</strong> o hacé clic para elegirla</p>
+        <p class="drop-sub">Excel .xlsx, .xlsm o .xls</p>
       </div>
       <input type="file" id="fileNP" accept=".xls,.xlsx,.xlsm" hidden>
-      <div id="npInfo" class="parseInfo"></div>
+      <div id="npInfo" class="parseInfo" role="status"></div>
       <div id="npWarn" class="parseWarn"></div>
-      <p class="hint">Se incluyen solo los ítems con cantidad mayor a 0. El puerto se puede cambiar por ítem en la vista previa.</p>
+      <p class="hint" id="npHint">Se incluyen solo los ítems con cantidad mayor a 0. El puerto se puede cambiar por ítem en la vista previa.</p>
     </div>
 
     <div class="card">
-      <h2>2 · Datos de la proforma</h2>
+      <h2><span class="step-n" data-paso="pfDatos">2</span>Datos de la proforma</h2>
       <div class="grid g4">
-        <div><label>Empresa</label>
+        <div><label for="pfEmpresa">Empresa emisora</label>
           <select id="pfEmpresa">
             <option value="SAMEDY">SAMEDY S.A.</option>
             <option value="MVG">MVG TRADE S.A.S.</option>
           </select>
         </div>
-        <div><label>Fecha</label><input type="date" id="pfFecha"></div>
-        <div style="grid-column:span 2"><label>N° Proforma</label><input type="text" id="pfNro" placeholder="Se arma solo: DD.MM.AAAA-CLIENTE"></div>
+        <div><label for="pfFecha">Fecha</label><input type="date" id="pfFecha"></div>
+        <div class="span2"><label for="pfNro">N° de proforma</label><input type="text" id="pfNro" class="code" placeholder="Se arma solo: DD.MM.AAAA-CLIENTE"></div>
       </div>
-      <div class="grid g3" style="margin-top:14px">
-        <div><label>Cliente <span id="cliState" style="font-weight:400;text-transform:none;letter-spacing:0"></span></label>
+      <div class="grid g3 mt">
+        <div><label for="pfClienteSel">Cliente <span id="cliState" class="lbl-note"></span></label>
           <select id="pfClienteSel"></select>
-          <input type="text" id="pfCliente" autocomplete="off" style="display:none;margin-top:6px" placeholder="Escribí el nombre del cliente">
+          <input type="text" id="pfCliente" autocomplete="off" style="display:none;margin-top:6px" placeholder="Nombre del cliente" aria-label="Cliente (escrito a mano)">
         </div>
-        <div><label>Razón social <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(es la que se imprime)</span></label>
+        <div><label for="pfRazon">Razón social <span class="lbl-note">(es la que se imprime)</span></label>
           <input type="text" id="pfRazon" placeholder="Nombre legal completo"></div>
-        <div><label>RUT</label><input type="text" id="pfRut" placeholder="—"></div>
+        <div><label for="pfRut">RUT</label><input type="text" id="pfRut" class="code" placeholder="—"></div>
       </div>
-      <div class="grid g3" style="margin-top:14px">
-        <div><label>Dirección</label><input type="text" id="pfDireccion"></div>
-        <div><label>Ciudad</label><input type="text" id="pfCiudad"></div>
-        <div><label>País <span id="paisState" style="font-weight:400;text-transform:none;letter-spacing:0"></span></label>
+      <div class="grid g3 mt">
+        <div><label for="pfDireccion">Dirección</label><input type="text" id="pfDireccion"></div>
+        <div><label for="pfCiudad">Ciudad</label><input type="text" id="pfCiudad"></div>
+        <div><label for="pfPaisSel">País <span id="paisState" class="lbl-note"></span></label>
           <select id="pfPaisSel"></select>
-          <input type="text" id="pfPais" autocomplete="off" style="display:none;margin-top:6px" placeholder="Escribí el país">
+          <input type="text" id="pfPais" autocomplete="off" style="display:none;margin-top:6px" placeholder="País" aria-label="País (escrito a mano)">
         </div>
       </div>
-      <div class="grid g2" style="margin-top:14px">
-        <div><label>Condición de pago</label><input type="text" id="pfPago" value="Pago: 30% anticipo, saldo contra BL."></div>
+      <div class="grid g3 mt">
+        <div class="span2"><label for="pfPago">Condición de pago</label><input type="text" id="pfPago" value="Pago: 30% anticipo, saldo contra BL."></div>
       </div>
-      <p class="hint">Al elegir un cliente de la lista se completan solos su razón social, RUT, dirección, ciudad y país (salen de la hoja «Datos Clientes Comex»). Si el mismo cliente está cargado en varios países, el desplegable de País te deja elegir cuál, y los demás datos se acomodan a ese país. Si es un cliente nuevo, escribilo y completá los datos a mano. Al elegir la empresa, la proforma sale con sus datos y su bloque bancario completo; el bloque debajo de los ítems es fijo.</p>
+      <p class="hint">Al elegir un cliente se completan solos razón social, RUT, dirección, ciudad y país (salen de la hoja «Datos Clientes Comex»); lo autocompletado se marca en verde. Si el cliente está cargado en varios países, elegí cuál en País. Si es un cliente nuevo, elegí «Otro» y completá los datos a mano.</p>
     </div>
 
     <div class="card">
-      <h2>3 · Vista previa</h2>
-      <div style="overflow-x:auto">
+      <h2><span class="step-n" data-paso="pfRevisar">3</span>Vista previa</h2>
+      <div class="table-wrap">
         <table>
           <thead><tr>
-            <th style="width:110px">Código</th><th style="width:120px">EAN</th><th>Descripción</th>
-            <th style="width:80px;text-align:right">Cantidad</th><th style="width:110px;text-align:right">Precio Unit.</th>
-            <th style="width:110px;text-align:right">Monto Total</th><th style="width:85px;text-align:right">Qty/Carton</th>
-            <th style="width:80px;text-align:right">Cartons</th><th style="width:75px;text-align:right">CBM</th>
-            <th style="width:120px">Puerto
-              <select id="pfPuertoAll" onchange="setPuertoAll(this.value); this.selectedIndex=0;"
-                      style="width:100%; margin-top:4px; padding:3px 6px; font-size:.75rem; text-transform:none; font-weight:400;">
+            <th>Código</th><th>EAN</th><th>Descripción</th>
+            <th class="num">Cantidad</th><th class="num">Precio unit.</th>
+            <th class="num">Monto total</th><th class="num">Qty/carton</th>
+            <th class="num">Cartons</th><th class="num">CBM</th>
+            <th style="min-width:130px">Puerto
+              <select id="pfPuertoAll" onchange="setPuertoAll(this.value); this.selectedIndex=0;" aria-label="Aplicar un puerto a todos los ítems"
+                      style="margin-top:4px; min-height:30px; padding:3px 6px; font-size:12px; font-weight:400;">
                 <option value="">aplicar a todos…</option>
               </select>
             </th>
           </tr></thead>
-          <tbody id="pfItems"><tr><td colspan="10" style="color:var(--muted); padding:14px 6px">Subí una nota de pedido para ver los ítems.</td></tr></tbody>
+          <tbody id="pfItems"><tr class="empty"><td colspan="10">Subí una nota de pedido para ver los ítems.</td></tr></tbody>
         </table>
-      </div>
-      <div class="totalbar">
-        <div class="count" id="pfCount" style="color:var(--muted); font-size:.9rem"></div>
-        <div class="total" id="pfTotal"></div>
       </div>
     </div>
 
-    <button class="btn btn-brand" id="genBtn" onclick="genProforma()">Descargar Proforma (.xlsx)</button>
-    <div id="pfMsg" class="msg"></div>
-  </div>
+    <div id="pfMsg" class="msg" role="status"></div>
+    <div class="actionbar">
+      <div class="actionbar-info" id="pfCount" data-vacio="Subí una nota de pedido para ver el total"></div>
+      <div class="actionbar-cta">
+        <span class="total" id="pfTotal"></span>
+        <button class="btn btn-brand" id="genBtn" onclick="genProforma()">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+          <span class="btn-label">Descargar proforma</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
   <!-- ============ SOLAPA 1: CARGA AL DASHBOARD ============ -->
-  <div id="tab1" style="display:none">
+  <section id="tab1" role="tabpanel" aria-labelledby="tabBtn1" style="display:none">
+    <ol class="steps" aria-label="Pasos para cargar al Sheets">
+      <li data-paso="pf1"><span class="step-n">1</span>Proforma</li>
+      <li data-paso="gen1"><span class="step-n">2</span>Datos generales</li>
+      <li data-paso="items1"><span class="step-n">3</span>Ítems</li>
+    </ol>
+
     <div class="card">
-      <h2>1 · Proforma <span style="font-weight:400;color:var(--muted);font-size:.85rem">(opcional — también podés cargar a mano)</span></h2>
-      <div id="drop" class="drop">
-        <p><strong>Arrastrá la proforma acá</strong> o hacé clic para elegir el archivo (.xls / .xlsx)</p>
+      <h2><span class="step-n" data-paso="pf1">1</span>Proforma <span class="opt">opcional — también podés cargar a mano</span></h2>
+      <div id="drop" class="drop" role="button" tabindex="0">
+        <svg class="ico drop-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+        <p class="drop-title" data-vacio="&lt;strong&gt;Arrastrá la proforma acá&lt;/strong&gt; o hacé clic para elegirla"><strong>Arrastrá la proforma acá</strong> o hacé clic para elegirla</p>
+        <p class="drop-sub">Excel .xls o .xlsx</p>
       </div>
       <input type="file" id="file" accept=".xls,.xlsx" hidden>
-      <div id="parseInfo" class="parseInfo"></div>
+      <div id="parseInfo" class="parseInfo" role="status"></div>
       <div id="parseWarn" class="parseWarn"></div>
     </div>
 
     <div class="card">
-      <h2>2 · Datos generales <span id="listState" class="badge">cargando listas…</span></h2>
+      <h2><span class="step-n" data-paso="gen1">2</span>Datos generales</h2>
       <div class="grid g5">
-        <div><label>Cliente</label><select id="cliente"></select></div>
-        <div><label>País</label><select id="pais"></select></div>
-        <div><label>Temporada</label><input type="text" id="temporada" placeholder="Ej: COLORING"></div>
-        <div><label>N° Proforma</label><input type="text" id="nroProforma" placeholder="Se completa solo al subir el archivo"></div>
-        <div><label>Fecha proforma</label><input type="date" id="fechaPf"></div>
+        <div><label for="cliente">Cliente</label><select id="cliente"></select></div>
+        <div><label for="pais">País</label><select id="pais"></select></div>
+        <div><label for="temporada">Temporada</label><input type="text" id="temporada" placeholder="COLORING"></div>
+        <div><label for="nroProforma">N° de proforma</label><input type="text" id="nroProforma" class="code" placeholder="Se completa al subir el archivo"></div>
+        <div><label for="fechaPf">Fecha de la proforma</label><input type="date" id="fechaPf"></div>
       </div>
       <p class="hint">La fecha de la proforma se lee sola del archivo y define el año de MES/AÑO, que es con el que FOB CHINA busca el costo. Si queda vacía se usa el año en curso. La columna FECHA, Quarter y FC Samedy se completan a mano en el Sheet, igual que ETD y ETA.</p>
     </div>
 
     <div class="card">
-      <h2>3 · Ítems</h2>
-      <div style="overflow-x:auto">
+      <h2><span class="step-n" data-paso="items1">3</span>Ítems</h2>
+      <div class="table-wrap">
         <table>
           <thead><tr>
-            <th style="width:110px">SKU</th><th>Descripción</th><th style="width:130px">Categoría</th>
-            <th style="width:90px">Cantidad</th><th style="width:100px">FOB Vta (u.)</th>
-            <th style="width:130px">Licencia</th><th style="width:120px">Sello</th>
-            <th style="width:95px;text-align:right">Total</th><th style="width:30px"></th>
+            <th style="min-width:110px">SKU</th><th style="min-width:180px">Descripción</th><th style="min-width:120px">Categoría</th>
+            <th style="min-width:84px">Cantidad</th><th style="min-width:104px">FOB vta (u.)</th>
+            <th style="min-width:116px">Licencia</th><th style="min-width:108px">Sello</th>
+            <th class="num" style="min-width:90px">Total</th><th style="width:44px"><span class="sr-only">Quitar</span></th>
           </tr></thead>
           <tbody id="items"></tbody>
         </table>
       </div>
-      <p class="hint">Categoría, Licencia y Sello se completan solos según el SKU, tomando cómo se cargó ese mismo SKU en el histórico del Dashboard. Si es un SKU nuevo quedan vacíos para que los elijas.</p>
-      <div class="totalbar">
-        <button class="btn btn-ghost" onclick="addItem()">+ Agregar ítem</button>
-        <div class="total"><span id="grandQty" style="font-weight:400;color:var(--muted);margin-right:14px"></span>Total: <span id="grandTotal">USD 0.00</span></div>
+      <div class="card-foot">
+        <button class="btn btn-ghost" onclick="addItem()">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Agregar ítem
+        </button>
+        <p class="hint" style="margin:0; max-width:620px">Categoría, Licencia y Sello se completan solos según cómo se cargó ese SKU en el histórico del Dashboard. Si es un SKU nuevo quedan vacíos para que los elijas.</p>
       </div>
     </div>
 
-    <button class="btn btn-brand" id="send" onclick="submitAll()">Agregar al Sheets</button>
-    <div id="msg" class="msg"></div>
-  </div>
+    <div id="msg" class="msg" role="status"></div>
+    <div class="actionbar">
+      <div class="actionbar-info" id="grandQty" data-vacio="Cargá al menos un ítem"></div>
+      <div class="actionbar-cta">
+        <span class="total" id="grandTotal">USD 0.00</span>
+        <button class="btn btn-brand" id="send" onclick="submitAll()">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/></svg>
+          <span class="btn-label">Agregar al Sheets</span>
+        </button>
+      </div>
+    </div>
+  </section>
 
-</div>
+</main>
 
 <script>
 /* ================== CONFIGURACIÓN ================== */
@@ -280,9 +433,21 @@ let CLIENTES = {};
 function switchTab(n){
   document.getElementById('tab1').style.display = n === 1 ? '' : 'none';
   document.getElementById('tab2').style.display = n === 2 ? '' : 'none';
-  document.getElementById('tabBtn1').classList.toggle('active', n === 1);
-  document.getElementById('tabBtn2').classList.toggle('active', n === 2);
+  [[1, 'tabBtn1'], [2, 'tabBtn2']].forEach(([k, id]) => {
+    const b = document.getElementById(id);
+    b.classList.toggle('active', n === k);
+    b.setAttribute('aria-selected', n === k ? 'true' : 'false');
+    b.tabIndex = n === k ? 0 : -1;        // con el teclado se entra a la solapa activa
+  });
 }
+// Flechas izquierda/derecha para moverse entre solapas (patrón estándar de tabs).
+document.querySelector('.tabs').addEventListener('keydown', e => {
+  if(e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  const n = document.getElementById('tabBtn1').getAttribute('aria-selected') === 'true' ? 2 : 1;
+  switchTab(n);
+  document.getElementById('tabBtn' + n).focus();
+  e.preventDefault();
+});
 
 /* ================== LOGIN ================== */
 function showLogin(err){
@@ -291,13 +456,20 @@ function showLogin(err){
   if(err){ e.style.display = 'block'; e.textContent = err; }
   else e.style.display = 'none';
   setTimeout(() => document.getElementById('passInput').focus(), 50);
+  grilla_().arrancar();
 }
-function hideLogin(){ document.getElementById('login').style.display = 'none'; }
+function hideLogin(){
+  document.getElementById('login').style.display = 'none';
+  grilla_().parar();               // la grilla solo corre mientras se ve el ingreso
+}
 async function doLogin(){
   const p = document.getElementById('passInput').value;
   if(!p) return;
   PASS = p;
+  const btn = document.getElementById('loginBtn');
+  btn.classList.add('loading'); btn.querySelector('.btn-label').textContent = 'Entrando…';
   const ok = await loadLists();
+  btn.classList.remove('loading'); btn.querySelector('.btn-label').textContent = 'Entrar';
   if(ok){ sessionStorage.setItem('mv_pass', PASS); hideLogin(); }
   else { PASS = ''; sessionStorage.removeItem('mv_pass'); }
 }
@@ -328,12 +500,12 @@ async function loadLists(){
     if(!data.ok){
       if(data.error === 'AUTH'){
         showLogin(document.getElementById('passInput').value ? 'Contraseña incorrecta' : '');
-        badge.textContent = 'esperando contraseña';
+        badge.textContent = 'Esperando contraseña';
         return false;
       }
       if(data.error === 'BLOQUEADO'){
         showLogin(MSG_BLOQUEADO_);
-        badge.textContent = 'esperando contraseña';
+        badge.textContent = 'Esperando contraseña';
         return false;
       }
       throw new Error(data.error);
@@ -351,13 +523,13 @@ async function loadLists(){
       tr.querySelectorAll('select').forEach(refreshRowSelect);
       applySku_(tr);
     });
-    badge.textContent = 'listas actualizadas · cargando catálogo…';
-    badge.style.background = '#f0fdf4'; badge.style.color = '#166534';
+    badge.textContent = 'Conectado · cargando catálogo…';
+    badge.dataset.estado = 'ok';
     if(!Object.keys(SKUS).length) cargarSkus_();   // el catálogo, por atrás
     return true;
   }catch(e){
-    badge.textContent = 'no se pudieron cargar las listas';
-    badge.style.background = '#fef2f2'; badge.style.color = '#991b1b';
+    badge.textContent = 'Sin conexión';
+    badge.dataset.estado = 'err';
     // Antes esto solo cambiaba el badge, que queda tapado por la pantalla de
     // contraseña: apretabas "Entrar" y no pasaba nada. Ahora se avisa ahí.
     // TypeError = no hubo conexión; SyntaxError = llegó algo que no es JSON
@@ -386,15 +558,15 @@ function cargarSkus_(){
       if(!d.ok || !d.skus) throw new Error(d.error || 'sin catálogo');
       SKUS = d.skus;
       SKUS_LISTOS = true;
-      badge.textContent = `listas actualizadas · ${Object.keys(SKUS).length} SKU en catálogo`;
+      badge.textContent = `Conectado · ${Object.keys(SKUS).length.toLocaleString('es-AR')} SKU en catálogo`;
       // lo que ya esté en pantalla se completa ahora
       document.querySelectorAll('#items tr').forEach(tr => applySku_(tr));
       if(typeof NP !== 'undefined' && NP) renderPreview();
       return true;
     })
     .catch(() => {
-      badge.textContent = 'listas actualizadas · el catálogo de SKU no cargó';
-      badge.style.background = '#fef3c7'; badge.style.color = '#92400e';
+      badge.textContent = 'Conectado · el catálogo de SKU no cargó';
+      badge.dataset.estado = 'warn';
       SKUS_PIDIENDO = null;    // para poder reintentar
       return false;
     });
@@ -461,7 +633,7 @@ function armarCombo_(idSel, idInp, valores, textoVacio){
   };
   add('', valores.length ? '— elegir —' : textoVacio);
   valores.forEach(v => add(v, v));
-  add(OTRO_, '✏️ Otro (escribir a mano)');
+  add(OTRO_, 'Otro (escribir a mano)…');
   sincronizarCombo_(idSel, idInp);
 }
 /* Deja el desplegable mostrando lo que haya en el input. Si ese valor no está
@@ -502,8 +674,8 @@ function cargarClientesComex_(lista){
   });
   const nombres = Object.keys(CLIENTES).map(k => CLIENTES[k][0].nombre);
   const aviso = respondio
-    ? '⚠ el Apps Script responde, pero la hoja volvió vacía'
-    : '⚠ falta implementar el Apps Script con «Nueva versión»';
+    ? 'El Apps Script responde, pero la hoja volvió vacía'
+    : 'Falta implementar el Apps Script con «Nueva versión»';
   armarCombo_('pfClienteSel', 'pfCliente', nombres, aviso);
   const st = document.getElementById('cliState');
   st.textContent = nombres.length
@@ -531,6 +703,7 @@ function ponerCampos_(c){
       f.classList.toggle('auto', !!val);
     });
   sincronizarCombo_('pfPaisSel', 'pfPais');     // el desplegable acompaña al valor
+  actualizarPasos_();
 }
 
 /* Completa razón social, RUT, dirección, ciudad y país cuando el nombre coincide
@@ -606,15 +779,15 @@ function addItem(data = {}){
   const tb = document.getElementById('items');
   const tr = document.createElement('tr');
   tr.innerHTML = `
-    <td><input class="i-sku" value="${esc(data.sku ?? '')}"></td>
-    <td><input class="i-desc" value="${esc(data.descripcion ?? '')}"></td>
-    <td><select class="i-cat" data-kind="categorias"></select></td>
-    <td><input class="i-qty" type="number" min="0" value="${esc(data.qty ?? '')}"></td>
-    <td><input class="i-price" type="number" step="0.0001" min="0" value="${esc(data.fobVta ?? '')}"></td>
-    <td><select class="i-lic" data-kind="licencias"></select></td>
-    <td><select class="i-sello" data-kind="sellos"></select></td>
+    <td><input class="i-sku" aria-label="SKU" value="${esc(data.sku ?? '')}"></td>
+    <td><input class="i-desc" aria-label="Descripción" value="${esc(data.descripcion ?? '')}"></td>
+    <td><select class="i-cat" aria-label="Categoría" data-kind="categorias"></select></td>
+    <td><input class="i-qty" aria-label="Cantidad" type="number" min="0" value="${esc(data.qty ?? '')}"></td>
+    <td><input class="i-price" aria-label="FOB venta por unidad" type="number" step="0.0001" min="0" value="${esc(data.fobVta ?? '')}"></td>
+    <td><select class="i-lic" aria-label="Licencia" data-kind="licencias"></select></td>
+    <td><select class="i-sello" aria-label="Sello" data-kind="sellos"></select></td>
     <td class="subtotal i-sub">—</td>
-    <td><button class="del" title="Quitar" onclick="this.closest('tr').remove();recalc()">✕</button></td>`;
+    <td><button class="del" type="button" title="Quitar ítem" aria-label="Quitar ítem" onclick="this.closest('tr').remove();recalc()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></td>`;
   tb.appendChild(tr);
   tr.querySelectorAll('select').forEach(refreshRowSelect);
   applySku_(tr);
@@ -651,8 +824,9 @@ function recalc(){
   });
   document.getElementById('grandTotal').textContent = 'USD ' + fmt(total);
   document.getElementById('grandQty').textContent = conDatos
-    ? `${conDatos} ítem${conDatos === 1 ? '' : 's'} · ${unidades.toLocaleString('en-US')} unidades ·`
+    ? `${conDatos} ítem${conDatos === 1 ? '' : 's'} · ${unidades.toLocaleString('en-US')} unidades`
     : '';
+  actualizarPasos_();
 }
 function fmt(n){ return n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
@@ -751,11 +925,13 @@ drop.addEventListener('dragleave', () => drop.classList.remove('over'));
 drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); if(e.dataTransfer.files[0]) parseProforma(e.dataTransfer.files[0]); });
 fileInput.addEventListener('change', () => { if(fileInput.files[0]) parseProforma(fileInput.files[0]); });
 
-function readWB_(file, cb){
+/* msgId: dónde avisar si el archivo no se puede abrir ('msg' o 'pfMsg').
+   Antes era un alert(), que frena la página y no queda a la vista. */
+function readWB_(file, cb, msgId){
   const reader = new FileReader();
   reader.onload = e => {
     try{ cb(XLSX.read(e.target.result, {type:'array', cellDates:false})); }
-    catch(err){ alert('No pude abrir el archivo: ' + err.message); }
+    catch(err){ showMsg(msgId, 'err', `No se pudo abrir ${file.name}: ${err.message}`); }
   };
   reader.readAsArrayBuffer(file);
 }
@@ -918,8 +1094,8 @@ async function parseProforma(file){
     }
     const p2 = detectProforma_(wb);           // red de seguridad: si no se pudo leer como nota, se prueba igual
     if(p2) return applyProforma_(p2, file);
-    alert('No pude leer el archivo.\n\nSi es una proforma, necesita una fila de encabezados con Código/Code, Descripción/Description y Cantidad/Qty.\nSi es una nota de pedido, usá la solapa "Generar Proforma".');
-  });
+    showMsg('msg', 'err', `No se pudo leer ${file.name}. Si es una proforma, necesita una fila de encabezados con Código/Code, Descripción/Description y Cantidad/Qty. Si es una nota de pedido, usá la solapa «Generar proforma».`);
+  }, 'msg');
 }
 
 function applyProforma_(p, file){
@@ -972,14 +1148,16 @@ function applyProforma_(p, file){
 
   const info = document.getElementById('parseInfo');
   info.style.display = 'block';
-  info.textContent = `✓ ${file.name} — ${count} ítem(s)` +
+  info.textContent = `${file.name} — ${count} ítem(s)` +
     (detectado.length ? ' · ' + detectado.join(' · ') : '') + '.';
   const warn = document.getElementById('parseWarn');
   if(count - reconocidos > 0) pendiente.push(`${count - reconocidos} ítem(s) sin Categoría/Licencia/Sello (SKU nuevo)`);
   if(pendiente.length){
     warn.style.display = 'block';
-    warn.textContent = '⚠ Completá a mano: ' + pendiente.join(' · ');
+    warn.textContent = 'Completá a mano: ' + pendiente.join(' · ');
   } else warn.style.display = 'none';
+  estadoDrop_(drop, file.name);
+  actualizarPasos_();
 }
 
 /* ===== solapa 1: envío ===== */
@@ -993,9 +1171,10 @@ async function submitAll(){
     anio: g('fechaPf').slice(0, 4)   // año de MES/AÑO; vacío = el Apps Script usa el año en curso
   };
   if(!general.cliente || !general.pais){
-    return showMsg('msg','err', 'Completá al menos Cliente y País.');
+    showMsg('msg','err', 'Completá al menos Cliente y País.');
+    return marcarInvalido_(['cliente', 'pais'].filter(id => !g(id)).map(id => document.getElementById(id)));
   }
-  const items = [];
+  const items = [], filas = [];
   document.querySelectorAll('#items tr').forEach(tr => {
     const v = cls => tr.querySelector(cls).value.trim();
     if(v('.i-sku') || v('.i-desc')){
@@ -1005,14 +1184,30 @@ async function submitAll(){
         qty: v('.i-qty'), fobVta: v('.i-price'),
         licencia: v('.i-lic'), sello: v('.i-sello')
       });
+      filas.push(tr);
     }
   });
-  if(!items.length) return showMsg('msg','err', 'Agregá al menos un ítem.');
-  const inc = items.find(i => !i.qty || !i.fobVta || !i.categoria);
-  if(inc) return showMsg('msg','err', `Falta Categoría, Cantidad o FOB Vta en el ítem ${inc.sku || inc.descripcion}.`);
+  if(!items.length){
+    showMsg('msg','err', 'Agregá al menos un ítem.');
+    return marcarInvalido_([document.querySelector('#items .i-sku')].filter(Boolean));
+  }
+  // Se marcan en rojo TODOS los campos que faltan, no solo se avisa abajo:
+  // así se ve de un vistazo qué fila y qué columna hay que completar.
+  const faltan = [];
+  items.forEach((it, k) => {
+    if(!it.categoria) faltan.push(filas[k].querySelector('.i-cat'));
+    if(!it.qty)       faltan.push(filas[k].querySelector('.i-qty'));
+    if(!it.fobVta)    faltan.push(filas[k].querySelector('.i-price'));
+  });
+  if(faltan.length){
+    const k = items.findIndex(i => !i.qty || !i.fobVta || !i.categoria);
+    const filasMal = new Set(faltan.map(el => el.closest('tr'))).size;
+    showMsg('msg','err', `Falta Categoría, Cantidad o FOB vta en ${filasMal === 1 ? 'el ítem ' + (items[k].sku || items[k].descripcion) : filasMal + ' ítems'}. Están marcados en rojo.`);
+    return marcarInvalido_(faltan);
+  }
 
   const btn = document.getElementById('send');
-  btn.classList.add('loading'); btn.textContent = 'Cargando…';
+  btn.classList.add('loading'); btn.querySelector('.btn-label').textContent = 'Cargando…';
   try{
     const res = await fetch(API_URL, {
       method: 'POST',
@@ -1025,23 +1220,28 @@ async function submitAll(){
       if(data.error === 'BLOQUEADO'){ showLogin(MSG_BLOQUEADO_); throw new Error('acceso bloqueado por 15 minutos'); }
       throw new Error(data.error);
     }
-    showMsg('msg','ok', `✓ Se cargaron ${data.added} fila(s) en el Dashboard (desde la fila ${data.firstRow}).`);
+    showMsg('msg','ok', `Se cargaron ${data.added} fila(s) en el Dashboard (desde la fila ${data.firstRow}).`);
     document.getElementById('fechaPf').value = '';
     document.getElementById('items').innerHTML = '';
     document.getElementById('parseInfo').style.display = 'none';
     document.getElementById('parseWarn').style.display = 'none';
     document.querySelectorAll('.auto').forEach(el => el.classList.remove('auto'));
     fileInput.value = '';
+    estadoDrop_(drop, '');
     addItem();
     recalc();
   }catch(err){
-    showMsg('msg','err', 'Error al cargar: ' + err.message);
+    showMsg('msg','err', 'No se pudo cargar: ' + err.message);
   }finally{
-    btn.classList.remove('loading'); btn.textContent = 'Agregar al Sheets';
+    btn.classList.remove('loading'); btn.querySelector('.btn-label').textContent = 'Agregar al Sheets';
   }
 }
 function showMsg(id, cls, text){
   const msg = document.getElementById(id);
+  // submitAll lo oculta con style.display = 'none' al empezar; si no se borra
+  // acá, ese estilo le gana a la clase y el mensaje nunca se ve.
+  msg.style.display = '';
+  msg.dataset.validacion = '';
   msg.className = 'msg ' + cls; msg.textContent = text;
   msg.scrollIntoView({behavior:'smooth', block:'nearest'});
 }
@@ -1119,8 +1319,8 @@ async function parseNota(file){
     }
     const n2 = detectNota_(wb);               // red de seguridad: si no se pudo leer como proforma, se prueba igual
     if(n2) return applyNota_(n2, file);
-    alert('No pude leer el archivo.\n\nSi es una nota de pedido, cada hoja de producto necesita encabezados SKU/Código, Descripción, Cantidad y FOB, con al menos un ítem con cantidad mayor a 0.');
-  });
+    showMsg('pfMsg', 'err', `No se pudo leer ${file.name}. En una nota de pedido, cada hoja de producto necesita encabezados SKU/Código, Descripción, Cantidad y FOB, con al menos un ítem con cantidad mayor a 0.`);
+  }, 'pfMsg');
 }
 
 function applyNota_(n, file){
@@ -1130,14 +1330,15 @@ function applyNota_(n, file){
   const totalItems = n.sheets.reduce((a, s) => a + s.items.length, 0);
   const info = document.getElementById('npInfo');
   info.style.display = 'block';
-  info.textContent = `✓ ${file.name} — ${n.sheets.length} hoja(s) con pedido, ${totalItems} ítem(s) con cantidad.` +
+  info.textContent = `${file.name} — ${n.sheets.length} hoja(s) con pedido, ${totalItems} ítem(s) con cantidad.` +
     (n.etd ? ` · ETD: ${n.etd}` : '');
   const noPort = n.sheets.filter(s => !s.hasPort);
   const warn = document.getElementById('npWarn');
   if(noPort.length){
     warn.style.display = 'block';
-    warn.textContent = '⚠ La nota no trae el puerto (' + noPort.map(s => s.name).join(', ') + '): quedó Ningbo por defecto, cambialo en la columna Puerto.';
+    warn.textContent = 'La nota no trae el puerto (' + noPort.map(s => s.name).join(', ') + '): quedó Ningbo por defecto, cambialo en la columna Puerto.';
   } else warn.style.display = 'none';
+  estadoDrop_(dropNP, file.name);
   // sugerir cliente y país si vienen en el nombre del archivo o quedaron vacíos
   if(!document.getElementById('pfCliente').value) document.getElementById('pfCliente').focus();
 }
@@ -1178,23 +1379,24 @@ function renderPreview(){
   const tb = document.getElementById('pfItems');
   const items = allItems();
   if(!items.length){
-    tb.innerHTML = '<tr><td colspan="10" style="color:var(--muted); padding:14px 6px">Subí una nota de pedido para ver los ítems.</td></tr>';
+    tb.innerHTML = '<tr class="empty"><td colspan="10">Subí una nota de pedido para ver los ítems.</td></tr>';
     document.getElementById('pfCount').textContent = '';
-    document.getElementById('pfTotal').textContent = '';
+    animarMonto_(document.getElementById('pfTotal'), 0, () => '');
+    actualizarPasos_();
     return;
   }
   let tQty = 0, tMonto = 0, tCajas = 0, tCbm = 0;
   tb.innerHTML = items.map((it, idx) => {
     tQty += it.qty; tMonto += it.total; tCajas += Number(it.cajas) || 0; tCbm += it.cbm;
     return `<tr>
-      <td>${esc(it.sku)}</td><td>${esc(it.ean || '—')}</td><td>${esc(it.desc)}</td>
+      <td class="code">${esc(it.sku)}</td><td class="code">${esc(it.ean || '—')}</td><td>${esc(it.desc)}</td>
       <td class="num">${it.qty.toLocaleString('en-US')}</td>
       <td class="num">USD ${fmt(it.fob)}</td>
       <td class="num">USD ${fmt(it.total)}</td>
       <td class="num">${it.master || ''}</td>
       <td class="num">${it.cajas || ''}</td>
       <td class="num">${it.cbm ? it.cbm.toFixed(3) : ''}</td>
-      <td><select class="i-puerto" data-i="${idx}" onchange="setPuerto(${idx}, this.value)">${
+      <td><select class="i-puerto" data-i="${idx}" aria-label="Puerto de ${esc(it.sku)}" onchange="setPuerto(${idx}, this.value)">${
         PUERTOS.concat(it.puerto && !PUERTOS.includes(it.puerto) ? [it.puerto] : [])
           .map(p => `<option${p === it.puerto ? ' selected' : ''}>${esc(p)}</option>`).join('')
       }</select></td>
@@ -1202,7 +1404,8 @@ function renderPreview(){
   }).join('');
   document.getElementById('pfCount').textContent =
     `${items.length} ítems · ${tQty.toLocaleString('en-US')} unidades · ${tCajas.toLocaleString('en-US')} cajas · ${tCbm.toFixed(2)} CBM`;
-  document.getElementById('pfTotal').textContent = 'Total: USD ' + fmt(tMonto);
+  animarMonto_(document.getElementById('pfTotal'), tMonto, v => 'USD ' + fmt(v));
+  actualizarPasos_();
 }
 
 /* N° de proforma automático: DD.MM.AAAA-CLIENTE */
@@ -1230,9 +1433,22 @@ function b64ToBytes_(b64){
 async function genProforma(){
   const g = id => document.getElementById(id).value.trim();
   const items = allItems();
-  if(!items.length) return showMsg('pfMsg','err','Subí primero una nota de pedido con ítems.');
-  if(!g('pfCliente') || !g('pfPais')) return showMsg('pfMsg','err','Completá al menos Cliente y País.');
-  if(!g('pfFecha')) return showMsg('pfMsg','err','Elegí la fecha.');
+  if(!items.length){
+    showMsg('pfMsg','err','Subí primero una nota de pedido con ítems.');
+    return marcarInvalido_([dropNP]);
+  }
+  if(!g('pfCliente') || !g('pfPais') || !g('pfFecha')){
+    showMsg('pfMsg','err','Completá Cliente, País y Fecha. Están marcados en rojo.');
+    // Cliente y País pueden estar en el desplegable o en el campo de texto
+    // (si se eligió "Otro"): se marca el que se está viendo.
+    const visible = (sel, inp) => document.getElementById(inp).style.display === 'none'
+      ? document.getElementById(sel) : document.getElementById(inp);
+    const faltan = [];
+    if(!g('pfCliente')) faltan.push(visible('pfClienteSel', 'pfCliente'));
+    if(!g('pfPais'))    faltan.push(visible('pfPaisSel', 'pfPais'));
+    if(!g('pfFecha'))   faltan.push(document.getElementById('pfFecha'));
+    return marcarInvalido_(faltan);
+  }
   // Sin firma no se genera: una proforma sin firmar podría mandarse por error.
   if(!FIRMA_B64) return showMsg('pfMsg','err',
     'No llegó la firma desde el Apps Script. Falta publicar el Code.gs nuevo con «Nueva versión» ' +
@@ -1248,7 +1464,7 @@ async function genProforma(){
   const nro = g('pfNro') || `${String(d).padStart(2,'0')}.${String(m).padStart(2,'0')}.${y}`;
 
   const btn = document.getElementById('genBtn');
-  btn.classList.add('loading'); btn.textContent = 'Generando…';
+  btn.classList.add('loading'); btn.querySelector('.btn-label').textContent = 'Generando…';
   try{
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Sheet1', { views: [{ showGridLines: false }] });
@@ -1369,13 +1585,210 @@ async function genProforma(){
     // en Firefox y Safari.
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     const tot = items.reduce((s, i) => s + i.total, 0);
-    showMsg('pfMsg','ok', `✓ Proforma generada: PI ${nro}.xlsx — ${items.length} ítems, USD ${fmt(tot)}. Ya la podés subir al Sheets desde la otra solapa.`);
+    showMsg('pfMsg','ok', `Proforma generada: PI ${nro}.xlsx — ${items.length} ítems, USD ${fmt(tot)}. Ya la podés subir al Sheets desde la otra solapa.`);
   }catch(err){
-    showMsg('pfMsg','err', 'Error al generar: ' + err.message);
+    showMsg('pfMsg','err', 'No se pudo generar: ' + err.message);
   }finally{
-    btn.classList.remove('loading'); btn.textContent = 'Descargar Proforma (.xlsx)';
+    btn.classList.remove('loading'); btn.querySelector('.btn-label').textContent = 'Descargar proforma';
   }
 }
+
+/* ================== INTERFAZ (rediseño) ================== */
+
+/* Fondo del ingreso: grilla de "contenedores".
+   Basado en ShapeGrid de React Bits (c) David Haz — MIT + Commons Clause.
+   Pasado a JavaScript sin React, con los colores del logo y estos cambios:
+   - algunas celdas quedan pintadas siempre (amarillo/celeste) y viajan con
+     la grilla, para que haya color aunque nadie mueva el mouse;
+   - el mouse deja un rastro corto que se apaga solo;
+   - con "reducir movimiento" la grilla no se desplaza;
+   - solo corre mientras se ve el ingreso y con la pestaña visible.
+   Se crea la primera vez que se pide (por eso es var y no let: showLogin
+   puede llamarla antes de que el script llegue hasta acá). */
+var GRILLA_ = null;
+function grilla_(){
+  if(GRILLA_) return GRILLA_;
+  const canvas = document.getElementById('grilla');
+  const ctx = canvas.getContext('2d');
+  const quieto = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const T = 44, VEL = .18;                       // lado de la celda (px) y deriva por cuadro
+  const BG = [248, 250, 252];                    // = --bg de la página
+  const COL = { cyan:[2,169,226], yellow:[219,220,3] };
+  const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+  const rastro = new Map();                      // "i,j" -> {a, c}
+  let W = 0, H = 0, ox = 0, oy = 0, actual = null, activa = false, corriendo = false;
+
+  // Celdas fijas pintadas: salen de una cuenta, así son siempre las mismas.
+  function fija(i, j){
+    const h = Math.abs(Math.sin(i * 127.1 + j * 311.7) * 43758.5453) % 1;
+    return h < .045 ? 'yellow' : (h < .095 ? 'cyan' : null);
+  }
+  function medir(){
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = canvas.clientWidth; H = canvas.clientHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function dibujar(){
+    ctx.clearRect(0, 0, W, H);
+    const i0 = Math.floor(-ox / T) - 1, j0 = Math.floor(-oy / T) - 1;
+    const i1 = i0 + Math.ceil(W / T) + 2, j1 = j0 + Math.ceil(H / T) + 2;
+    for(let i = i0; i <= i1; i++){
+      for(let j = j0; j <= j1; j++){
+        const x = i * T + ox, y = j * T + oy, f = fija(i, j), r = rastro.get(i + ',' + j);
+        if(f){ ctx.fillStyle = rgba(COL[f], f === 'yellow' ? .55 : .35); ctx.fillRect(x + 1, y + 1, T - 2, T - 2); }
+        if(r){ ctx.fillStyle = rgba(COL[r.c], r.a * .85); ctx.fillRect(x + 1, y + 1, T - 2, T - 2); }
+      }
+    }
+    ctx.beginPath(); ctx.strokeStyle = 'rgba(35,31,32,.07)'; ctx.lineWidth = 1;
+    for(let i = i0; i <= i1; i++){ const x = Math.round(i * T + ox) + .5; ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+    for(let j = j0; j <= j1; j++){ const y = Math.round(j * T + oy) + .5; ctx.moveTo(0, y); ctx.lineTo(W, y); }
+    ctx.stroke();
+    // velo claro en el centro: la grilla se apaga detrás de la tarjeta
+    const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * .55);
+    g.addColorStop(0, rgba(BG, .92)); g.addColorStop(.45, rgba(BG, .55)); g.addColorStop(1, rgba(BG, 0));
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  function tick(){
+    if(!activa || document.hidden){ corriendo = false; return; }
+    if(!quieto){ ox += VEL; oy += VEL * .55; }
+    for(const [k, r] of rastro){ if(k !== actual){ r.a *= .93; if(r.a < .02) rastro.delete(k); } }
+    dibujar();
+    if(quieto && !rastro.size){ corriendo = false; return; }   // quieto y sin rastro: no hace falta seguir
+    requestAnimationFrame(tick);
+  }
+  function seguir(){ if(activa && !corriendo){ corriendo = true; requestAnimationFrame(tick); } }
+
+  const login = document.getElementById('login');
+  login.addEventListener('pointermove', e => {
+    const i = Math.floor((e.clientX - ox) / T), j = Math.floor((e.clientY - oy) / T), k = i + ',' + j;
+    if(k === actual) return;
+    actual = k;
+    rastro.set(k, { a:1, c:(i + j) % 3 === 0 ? 'yellow' : 'cyan' });
+    seguir();
+  });
+  login.addEventListener('pointerleave', () => { actual = null; });
+  addEventListener('resize', () => { if(activa){ medir(); dibujar(); } });
+  document.addEventListener('visibilitychange', seguir);
+
+  GRILLA_ = {
+    arrancar(){ activa = true; medir(); dibujar(); seguir(); },
+    parar(){ activa = false; rastro.clear(); }
+  };
+  return GRILLA_;
+}
+
+/* Errores al lado del campo: se marca en rojo lo que falta y se lleva el foco
+   al primero. La marca se va sola apenas se edita el campo. */
+function marcarInvalido_(els){
+  // El mensaje que se acaba de mostrar es de validación: se borra solo
+  // cuando se completa lo que falta (ver actualizarPasos_).
+  document.querySelectorAll('.msg.err').forEach(m => { m.dataset.validacion = '1'; });
+  els = (els || []).filter(Boolean);
+  els.forEach(el => { el.classList.add('invalido'); el.setAttribute('aria-invalid', 'true'); });
+  if(els[0]){
+    els[0].scrollIntoView({ block: 'center' });
+    els[0].focus({ preventScroll: true });
+  }
+}
+function limpiarInvalido_(el){
+  if(!el || !el.classList || !el.classList.contains('invalido')) return;
+  el.classList.remove('invalido');
+  el.removeAttribute('aria-invalid');
+}
+
+/* Zona de archivo: grande cuando está vacía, una franja chica cuando ya hay
+   un archivo cargado (para que la tabla quede más arriba). */
+function estadoDrop_(el, nombre){
+  const t = el.querySelector('.drop-title');
+  el.classList.toggle('cargada', !!nombre);
+  limpiarInvalido_(el);
+  if(nombre){
+    t.textContent = '';
+    const s = document.createElement('strong');
+    s.textContent = 'Cambiar archivo';
+    t.append(s, ' · arrastrá otro o hacé clic');
+  } else {
+    t.innerHTML = t.dataset.vacio;   // texto fijo del propio HTML, no viene del usuario
+  }
+}
+
+/* Total que "cuenta" hasta el valor nuevo al cargar una nota.
+   Inspirado en CountUp de React Bits (c) David Haz — MIT + Commons Clause;
+   escrito sin React. Con "reducir movimiento" activado en el sistema, o si el
+   valor no cambió, se muestra el número final directamente. */
+const MOV_REDUCIDO_ = window.matchMedia('(prefers-reduced-motion: reduce)');
+function animarMonto_(el, valor, formato){
+  const desde = Number(el.dataset.valor || 0);
+  el.dataset.valor = String(valor);
+  cancelAnimationFrame(el._raf);
+  clearTimeout(el._fin);
+  if(MOV_REDUCIDO_.matches || desde === valor || !valor){ el.textContent = formato(valor); return; }
+  const t0 = performance.now(), dur = 600;
+  const paso = t => {
+    const p = Math.min(1, (t - t0) / dur);
+    const e = 1 - Math.pow(1 - p, 3);              // arranca rápido y frena al final
+    el.textContent = formato(desde + (valor - desde) * e);
+    if(p < 1) el._raf = requestAnimationFrame(paso);
+  };
+  el._raf = requestAnimationFrame(paso);
+  // Respaldo: si el navegador pausa la animación (pestaña en segundo plano),
+  // el número final queda igual, nunca un valor intermedio.
+  el._fin = setTimeout(() => { cancelAnimationFrame(el._raf); el.textContent = formato(valor); }, dur + 150);
+}
+
+/* Indicador de pasos: marca en verde lo que ya está completo y resalta el
+   paso que sigue. Se recalcula con cada cambio en la página. */
+function setPaso_(clave, estado){
+  document.querySelectorAll(`[data-paso="${clave}"]`).forEach(el => {
+    if(estado) el.dataset.estado = estado; else delete el.dataset.estado;
+  });
+}
+function actualizarPasos_(){
+  const v = id => document.getElementById(id).value.trim();
+  // Un campo marcado en rojo que ya tiene valor (por ejemplo, el País que se
+  // completa solo al elegir el cliente) deja de estar en error.
+  document.querySelectorAll('.invalido').forEach(el => {
+    if(typeof el.value === 'string' && el.value.trim() && el.value !== OTRO_) limpiarInvalido_(el);
+  });
+  // Generar proforma
+  const npOk = !!(NP && allItems().length);
+  const datosOk = !!(v('pfCliente') && v('pfPais') && v('pfFecha'));
+  setPaso_('np', npOk ? 'hecho' : 'actual');
+  setPaso_('pfDatos', datosOk ? 'hecho' : (npOk ? 'actual' : ''));
+  setPaso_('pfRevisar', npOk && datosOk ? 'actual' : '');
+  // Agregar al Sheets (la proforma es opcional: también se carga a mano)
+  const filas = [...document.querySelectorAll('#items tr')]
+    .filter(tr => tr.querySelector('.i-sku').value.trim() || tr.querySelector('.i-desc').value.trim());
+  const generalOk = !!(v('cliente') && v('pais'));
+  const itemsOk = filas.length > 0 && filas.every(tr =>
+    tr.querySelector('.i-qty').value && tr.querySelector('.i-price').value && tr.querySelector('.i-cat').value);
+  setPaso_('pf1', filas.length ? 'hecho' : 'actual');
+  setPaso_('gen1', generalOk ? 'hecho' : (filas.length ? 'actual' : ''));
+  setPaso_('items1', itemsOk ? 'hecho' : (generalOk ? 'actual' : ''));
+  // Si ya se completó lo que pedía el mensaje de error, el mensaje se va.
+  // Solo los de "faltan datos": un error real (sin firma, sin conexión) queda.
+  const ocultarError = id => { const m = document.getElementById(id); if(m.dataset.validacion === '1') { m.className = 'msg'; m.dataset.validacion = ''; } };
+  if(npOk && datosOk) ocultarError('pfMsg');
+  if(generalOk && itemsOk) ocultarError('msg');
+}
+document.addEventListener('input',  e => { limpiarInvalido_(e.target); actualizarPasos_(); });
+document.addEventListener('change', e => { limpiarInvalido_(e.target); actualizarPasos_(); });
+
+/* Las zonas de archivo se pueden usar con teclado (Enter o espacio abren el
+   selector), y el brillo sigue al mouse. */
+[[drop, fileInput], [dropNP, fileNP]].forEach(([d, inp]) => {
+  d.addEventListener('keydown', e => {
+    if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); inp.click(); }
+  });
+  d.addEventListener('pointermove', e => {
+    const r = d.getBoundingClientRect();
+    d.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+    d.style.setProperty('--my', (e.clientY - r.top) + 'px');
+  });
+});
+
+// El logo de la proforma se reutiliza en el encabezado y en el ingreso.
+document.querySelectorAll('[data-logo]').forEach(img => { img.src = 'data:image/png;base64,' + LOGO_B64; });
 
 /* ================== INIT ================== */
 document.getElementById('pfFecha').valueAsDate = new Date();
@@ -1384,7 +1797,7 @@ autoNro();
 if(PASS){ hideLogin(); loadLists(); }
 else {
   showLogin();
-  document.getElementById('listState').textContent = 'esperando contraseña';
+  document.getElementById('listState').textContent = 'Esperando contraseña';
 }
 </script>
 </body>
