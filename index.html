@@ -548,24 +548,45 @@ const MSG_BLOQUEADO_ = 'Hubo demasiados intentos fallidos y el acceso quedó blo
 /* El catálogo de SKU se trae aparte, sin frenar el ingreso. Mientras no esté,
    la página funciona igual: lo único que falta es que se completen solos
    Categoría, Licencia, Sello y el EAN. */
+/* El primer pedido del catálogo después de un rato sin uso es el más pesado:
+   el Apps Script lo arma desde cero leyendo todo el Dashboard, y ahí Google
+   Sheets a veces falla de forma pasajera. Por eso se reintenta solo, con
+   esperas crecientes, antes de dar el aviso. El motivo del último error queda
+   en el aviso (al pasar el mouse) y en la consola, para poder diagnosticarlo. */
 let SKUS_LISTOS = false, SKUS_PIDIENDO = null;
+const SKUS_ESPERAS_ = [2000, 5000];        // reintentos: a los 2 s y a los 5 s
 function cargarSkus_(){
   if(SKUS_LISTOS) return Promise.resolve(true);
   if(SKUS_PIDIENDO) return SKUS_PIDIENDO;
   const badge = document.getElementById('listState');
-  SKUS_PIDIENDO = pedir_('skus')
+  const intento = n => pedir_('skus')
     .then(d => {
-      if(!d.ok || !d.skus) throw new Error(d.error || 'sin catálogo');
+      if(!d.ok || !d.skus) throw new Error(d.error || 'la respuesta no trajo el catálogo');
+      return d;
+    })
+    .catch(err => {
+      if(n >= SKUS_ESPERAS_.length) throw err;
+      console.warn(`Catálogo de SKU: falló el intento ${n + 1} (${err.message}). Reintentando…`);
+      badge.textContent = `Conectado · cargando catálogo (reintento ${n + 1})…`;
+      return new Promise(r => setTimeout(r, SKUS_ESPERAS_[n])).then(() => intento(n + 1));
+    });
+  SKUS_PIDIENDO = intento(0)
+    .then(d => {
       SKUS = d.skus;
       SKUS_LISTOS = true;
       badge.textContent = `Conectado · ${Object.keys(SKUS).length.toLocaleString('es-AR')} SKU en catálogo`;
+      badge.dataset.estado = 'ok';          // por si venía en naranja de un fallo anterior
+      badge.removeAttribute('title');
       // lo que ya esté en pantalla se completa ahora
       document.querySelectorAll('#items tr').forEach(tr => applySku_(tr));
       if(typeof NP !== 'undefined' && NP) renderPreview();
       return true;
     })
-    .catch(() => {
+    .catch(err => {
+      const motivo = err && err.message ? err.message : String(err);
+      console.warn('Catálogo de SKU: no cargó después de 3 intentos: ' + motivo);
       badge.textContent = 'Conectado · el catálogo de SKU no cargó';
+      badge.title = 'Motivo: ' + motivo + '. Se vuelve a intentar al subir un archivo.';
       badge.dataset.estado = 'warn';
       SKUS_PIDIENDO = null;    // para poder reintentar
       return false;
