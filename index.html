@@ -10,14 +10,15 @@
      inyectado no puede traer un script de afuera ni mandar los datos a otro
      servidor. Si se agrega una librería nueva, hay que sumarla acá.
      Google Fonts (Inter y JetBrains Mono) necesita fonts.googleapis.com para
-     el CSS y fonts.gstatic.com para los archivos de letra. -->
+     el CSS y fonts.gstatic.com para los archivos de letra.
+     Supabase: solo el proyecto de Mooving Comex (ingreso y lectura de datos). -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
   script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.sheetjs.com;
   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   img-src 'self' data:;
   font-src 'self' data: https://fonts.gstatic.com;
-  connect-src 'self' https://script.google.com https://script.googleusercontent.com;
+  connect-src 'self' https://script.google.com https://script.googleusercontent.com https://nmsexzvctvduxrwqqikn.supabase.co;
   form-action 'none';
   base-uri 'none';
   object-src 'none'">
@@ -47,19 +48,27 @@
 <style>
   /* ===== Sistema de diseño =====
      Minimalista y funcional (herramienta de trabajo, no landing).
-     Un solo color de acción: el rojo Mooving. El #e8443a original no llega al
-     contraste mínimo con texto blanco (3,9:1, hace falta 4,5:1), así que los
-     botones y textos usan el tono oscuro #c93830 (5,1:1) y el claro queda
-     solo para detalles decorativos. */
+     Cada color tiene UN solo significado, así se lee de un vistazo:
+       · tinta #231F20 (el negro del logo): la acción principal (Entrar,
+         Descargar proforma, Agregar al Sheets);
+       · amarillo #DBDC03 (logo): SOLO el paso actual. Nunca como texto: sobre
+         blanco no se lee;
+       · celeste: autocompletado y foco. El #02A9E2 del logo no llega a 3:1
+         sobre blanco, así que lo que es texto o borde va en #00749D;
+       · verde: solo éxito y paso hecho. Rojo: solo errores y borrar. */
   :root{
     --bg:#f8fafc; --card:#ffffff; --ink:#0f172a; --ink-2:#334155;
     --muted:#475569; --subtle:#64748b; --line:#e2e8f0; --line-strong:#cbd5e1; --hover:#f1f5f9;
-    --brand:#c93830; --brand-hover:#a92e27; --brand-deco:#e8443a; --brand-tint:#fdf2f1;
+    --tinta:#231f20;
+    --brand:#231f20; --brand-hover:#3d3839;
+    --amarillo:#dbdc03;
+    --celeste:#00749d; --celeste-bg:#f1fafd; --celeste-line:#a9ddf1; --celeste-tag:#e7f6fc;
     --ok:#15803d; --ok-bg:#f0fdf4; --ok-line:#bbf7d0;
     --warn:#b45309; --warn-bg:#fffbeb; --warn-line:#fde68a;
     --err:#b91c1c; --err-bg:#fef2f2; --err-line:#fecaca;
-    --ring:#0369a1;
-    --r:8px; --r-lg:12px; --dur:180ms;
+    --ring:#00749d; --ring-sombra:0 0 0 3px rgba(0,116,157,.20);
+    --r:8px; --r-celda:6px; --r-lg:12px; --dur:180ms;
+    --alto-control:40px; --alto-celda:34px; --alto-topbar:56px;
     --font:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
     --mono:'JetBrains Mono',ui-monospace,'Cascadia Mono',Consolas,monospace;
     /* íconos de los mensajes (SVG de Lucide, con el color ya puesto) */
@@ -67,16 +76,24 @@
     --i-warn:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b45309' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3'/%3E%3Cpath d='M12 9v4'/%3E%3Cpath d='M12 17h.01'/%3E%3C/svg%3E");
     --i-err:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b91c1c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v4'/%3E%3Cpath d='M12 16h.01'/%3E%3C/svg%3E");
     --i-check:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+    /* flecha de los desplegables: dibujada acá para que se vean iguales en
+       todos los navegadores (cada uno pinta la suya distinta) */
+    --i-flecha:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   }
   *{box-sizing:border-box; margin:0; padding:0;}
   body{font-family:var(--font); font-size:16px; line-height:1.5; background:var(--bg); color:var(--ink); -webkit-font-smoothing:antialiased;}
   .ico{width:18px; height:18px; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round;}
+  svg[hidden]{display:none;}   /* el atributo hidden no oculta un <svg> en todos los navegadores */
   :focus-visible{outline:2px solid var(--ring); outline-offset:2px;}
   button{font:inherit; color:inherit;}
 
   /* ===== encabezado ===== */
   .topbar{background:var(--card); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20;}
-  .topbar-in{max-width:1120px; margin:0 auto; padding:10px 16px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
+  /* Alto fijo (--alto-topbar): el encabezado de las tablas se queda pegado justo debajo. */
+  .topbar-in{max-width:1120px; margin:0 auto; padding:0 16px; min-height:var(--alto-topbar); display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
+  /* Fijo solo donde hace falta (desde 1100 px, ver tablas). Más angosto, el
+     encabezado puede necesitar dos renglones y no tiene que superponerse. */
+  @media (min-width:1100px){ .topbar-in{height:calc(var(--alto-topbar) - 1px); min-height:0; flex-wrap:nowrap;} }   /* -1: el borde de abajo completa los 56 */
   .brand{display:flex; align-items:center; gap:10px; margin-right:auto;}
   .brand-logo{height:30px; width:auto; display:block;}
   .brand-name{font-family:'Fredoka',var(--font); font-weight:600; font-size:18px; line-height:1; color:var(--ink); padding-left:10px; border-left:1px solid var(--line);}
@@ -84,6 +101,10 @@
   .tab{border:1px solid transparent; background:none; border-radius:7px; padding:7px 14px; min-height:36px; font-size:14px; font-weight:500; color:var(--muted); cursor:pointer; transition:background var(--dur), color var(--dur);}
   .tab:hover{color:var(--ink);}
   .tab.active{background:var(--card); color:var(--ink); border-color:var(--line); box-shadow:0 1px 2px rgba(15,23,42,.06);}
+  .sesion{display:flex; align-items:center; gap:4px 10px; flex-wrap:wrap;}
+  .link-btn{border:none; background:none; padding:6px 8px; min-height:32px; border-radius:6px; font-size:13px; font-weight:500; color:var(--ink-2); cursor:pointer; transition:background var(--dur);}
+  .link-btn:hover{background:var(--hover);}
+  .link-btn[disabled]{opacity:.5; cursor:default;}
   .status{display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--subtle); white-space:nowrap;}
   .status::before{content:''; width:8px; height:8px; border-radius:50%; background:var(--line-strong);}
   .status[data-estado="ok"]{color:var(--ok);}   .status[data-estado="ok"]::before{background:var(--ok);}
@@ -99,7 +120,7 @@
   .steps li[data-estado="actual"]{color:var(--ink); font-weight:600;}
   .steps li[data-estado="hecho"]{color:var(--ok);}
   .step-n{display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; border:1.5px solid var(--line-strong); font-size:12px; font-weight:600; color:var(--subtle); flex:none; background:var(--card);}
-  [data-estado="actual"] > .step-n, .step-n[data-estado="actual"]{border-color:var(--ink); color:var(--ink);}
+  [data-estado="actual"] > .step-n, .step-n[data-estado="actual"]{background:var(--amarillo); border-color:var(--amarillo); color:var(--tinta);}
   [data-estado="hecho"] > .step-n, .step-n[data-estado="hecho"]{background:var(--ok) var(--i-check) center/12px no-repeat; border-color:var(--ok); color:transparent;}
 
   /* ===== tarjetas ===== */
@@ -108,31 +129,58 @@
   .card h2 .opt{font-weight:400; color:var(--subtle); font-size:14px;}
   label{display:block; font-size:13px; font-weight:500; color:var(--ink-2); margin-bottom:6px;}
   .lbl-note{font-weight:400; color:var(--subtle);}
-  input,select{width:100%; min-height:40px; padding:8px 11px; border:1px solid var(--line-strong); border-radius:var(--r); font:inherit; font-size:15px; color:var(--ink); background:var(--card); transition:border-color var(--dur), box-shadow var(--dur);}
+  input,select{width:100%; height:var(--alto-control); padding:0 11px; border:1px solid var(--line-strong); border-radius:var(--r); font:inherit; font-size:15px; color:var(--ink); background-color:var(--card); transition:border-color var(--dur), box-shadow var(--dur);}
+  /* Desplegables con flecha propia (ver --i-flecha) y lugar para ella. */
+  select{appearance:none; -webkit-appearance:none; background-image:var(--i-flecha); background-repeat:no-repeat; background-position:right 10px center; background-size:16px; padding-right:32px;}
   input:hover,select:hover{border-color:#94a3b8;}
-  input:focus,select:focus{outline:none; border-color:var(--ring); box-shadow:0 0 0 3px rgba(3,105,161,.18);}
-  input::placeholder{color:#94a3b8;}
-  .auto{background:var(--ok-bg) !important; border-color:var(--ok-line) !important;}
-  .invalido{border-color:var(--err) !important; background:var(--err-bg) !important; box-shadow:0 0 0 3px rgba(185,28,28,.12) !important;}
+  input:focus,select:focus{outline:none; border-color:var(--ring); box-shadow:var(--ring-sombra);}
+  /* #64748b da 4,8:1 sobre blanco; el gris de antes (#94a3b8) daba 2,6:1 y no se leía. */
+  input::placeholder{color:var(--subtle);}
+  /* Campos numéricos sin las flechitas: no se usan y le roban lugar al número. */
+  input[type=number]{-moz-appearance:textfield; appearance:textfield;}
+  input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none; margin:0;}
+  /* Autocompletado = celeste (antes verde, que ahora es solo "éxito"). */
+  .auto{background-color:var(--celeste-bg) !important; border-color:var(--celeste-line) !important;}
+  .invalido{border-color:var(--err) !important; background-color:var(--err-bg) !important; box-shadow:0 0 0 3px rgba(185,28,28,.12) !important;}
+  /* Etiqueta "auto" al lado del nombre del campo que se completó solo. Cada
+     campo va envuelto en un .field; :has() mira si adentro hay algo .auto
+     (también el input oculto de País, que es el que guarda el valor). */
+  .field label{display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
+  .field:has(.auto) label::after{content:'auto'; order:1; font-size:11px; font-weight:600; line-height:1.4; color:var(--celeste); background:var(--celeste-tag); border-radius:4px; padding:1px 6px;}
+  .field label .lbl-note{order:2;}
+  .field label .lbl-der{margin-left:auto; font-size:12px;}   /* nota chica, a la derecha, en el mismo renglón */
+  .field:has(input.auto) select{background-color:var(--celeste-bg); border-color:var(--celeste-line);}   /* el desplegable acompaña a su input */
   .grid{display:grid; gap:16px;}
-  .g3{grid-template-columns:repeat(3,minmax(0,1fr));}
-  .g4{grid-template-columns:repeat(4,minmax(0,1fr));}
-  .g5{grid-template-columns:1.3fr .9fr 1.1fr 1fr 1fr;}
-  .span2{grid-column:span 2;}
-  .mt{margin-top:16px;}
+  /* Grilla de 12 columnas para los formularios: cada campo dice cuántas ocupa
+     (.s2 … .s12). Así los dos formularios se alinean igual y se acomodan solos
+     en pantallas chicas (ver los @media del final). */
+  .g12{grid-template-columns:repeat(12,minmax(0,1fr)); align-items:start;}
+  .s2{grid-column:span 2;} .s3{grid-column:span 3;} .s4{grid-column:span 4;}
+  .s6{grid-column:span 6;} .s12{grid-column:span 12;}
+  .subtitulo{font-size:12px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--subtle); margin:0 0 10px;}
+  .sep{border:0; height:1px; background:var(--line); margin:20px 0;}
+  .ayuda{font-size:12.5px; color:var(--subtle); margin-top:6px;}           /* ayuda debajo de un campo */
+  .tag-auto{font-size:11px; font-weight:600; color:var(--celeste); background:var(--celeste-tag); border-radius:4px; padding:1px 6px;}
   .hint{font-size:13px; color:var(--subtle); margin-top:12px; line-height:1.55;}
+  /* Encabezado de tarjeta con un control a la derecha (Puerto para todos). */
+  .card-head{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px;}
+  .card-head h2{margin:0;}
+  .card-head-der{margin-left:auto; display:flex; align-items:center; gap:8px;}
+  .card-head-der label{margin:0; white-space:nowrap;}
+  .card-head-der select{width:auto; min-width:150px; height:34px; font-size:14px;}
+  .steps{display:none;}   /* la lista de pasos no se muestra: el estado lo dan los números de cada tarjeta (el JS la sigue marcando) */
 
   /* ===== zona para soltar archivos =====
      El brillo que sigue al mouse está inspirado en SpotlightCard de React Bits
      (c) David Haz — MIT + Commons Clause. Hecho en CSS puro para no sumar React. */
   .drop{position:relative; overflow:hidden; border:1.5px dashed var(--line-strong); border-radius:var(--r-lg); padding:28px 20px; text-align:center; cursor:pointer; background:#fbfcfd; transition:border-color var(--dur), background var(--dur), padding var(--dur);}
-  .drop::before{content:''; position:absolute; inset:0; pointer-events:none; opacity:0; transition:opacity 300ms; background:radial-gradient(260px circle at var(--mx,50%) var(--my,50%), rgba(232,68,58,.10), transparent 70%);}
-  .drop:hover, .drop:focus-visible, .drop.over{border-color:var(--brand-deco);}
+  .drop::before{content:''; position:absolute; inset:0; pointer-events:none; opacity:0; transition:opacity 300ms; background:radial-gradient(260px circle at var(--mx,50%) var(--my,50%), rgba(2,169,226,.10), transparent 70%);}
+  .drop:hover, .drop:focus-visible, .drop.over{border-color:var(--celeste);}
   .drop:hover::before, .drop:focus-visible::before, .drop.over::before{opacity:1;}
-  .drop.over{background:var(--brand-tint);}
-  .drop .drop-ico{width:28px; height:28px; color:var(--brand); margin:0 auto 8px; display:block;}
+  .drop.over{background:var(--celeste-bg);}
+  .drop .drop-ico{width:28px; height:28px; color:var(--celeste); margin:0 auto 8px; display:block;}
   .drop-title{font-size:15px; color:var(--ink-2);}
-  .drop-title strong{color:var(--brand); font-weight:600;}
+  .drop-title strong{color:var(--tinta); font-weight:600;}
   .drop-sub{font-size:13px; color:var(--subtle); margin-top:2px;}
   .drop.cargada{padding:12px 16px; display:flex; align-items:center; justify-content:center; gap:10px;}
   .drop.cargada .drop-ico{width:18px; height:18px; margin:0;}
@@ -144,8 +192,20 @@
   .parseInfo{color:var(--ok); background-color:var(--ok-bg); border:1px solid var(--ok-line); background-image:var(--i-ok);}
   .parseWarn{color:var(--warn); background-color:var(--warn-bg); border:1px solid var(--warn-line); background-image:var(--i-warn);}
   .msg{margin:0 0 12px;}
-  .msg.ok{display:block; color:var(--ok); background-color:var(--ok-bg); border:1px solid var(--ok-line); background-image:var(--i-ok);}
-  .msg.err{display:block; color:var(--err); background-color:var(--err-bg); border:1px solid var(--err-line); background-image:var(--i-err);}
+  .msg.ok{display:flex; color:var(--ok); background-color:var(--ok-bg); border:1px solid var(--ok-line); background-image:var(--i-ok);}
+  .msg.err{display:flex; color:var(--err); background-color:var(--err-bg); border:1px solid var(--err-line); background-image:var(--i-err);}
+  .msg.info{display:flex; color:var(--ink-2); background-color:var(--card); border:1px solid var(--line-strong); padding-left:12px;}   /* neutro: "Ítem quitado" */
+  /* Mensaje con título en negrita y, opcional, un botón o link a la derecha
+     (ver showMsg). Los mensajes de una sola frase se ven igual que antes. */
+  .msg{align-items:center; gap:10px; flex-wrap:wrap;}
+  .msg-texto{flex:1; min-width:200px;}
+  .msg-texto strong{font-weight:600;}
+  .msg-accion{flex:none; display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 12px; border:1px solid currentColor; border-radius:var(--r-celda); background:var(--card); color:inherit; font-size:13px; font-weight:600; text-decoration:none; cursor:pointer;}
+  .msg-accion:hover{background:var(--hover);}
+  /* Aviso debajo del campo que falta (lo pone marcarInvalido_). */
+  .field-err{margin-top:6px; font-size:12.5px; font-weight:500; color:var(--err);}
+  /* ID de la implementación en los errores del ingreso: aparte y chico. */
+  .err-detalle{display:block; margin-top:4px; font-family:var(--mono); font-size:11.5px; color:var(--muted);}
 
   /* ===== tablas ===== */
   .table-wrap{overflow-x:auto; margin:0 -20px; padding:0 20px;}
@@ -153,10 +213,47 @@
   th{text-align:left; padding:8px 8px; color:var(--subtle); font-size:12px; font-weight:600; border-bottom:1px solid var(--line); white-space:nowrap;}
   td{padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:middle;}
   tbody tr:hover td{background:#fafbfc;}
-  td input, td select{min-height:36px; padding:6px 8px; font-size:14px;}
-  #items td{padding:6px 4px;}
+  td input, td select{height:var(--alto-celda); padding:0 8px; font-size:14px; border-radius:var(--r-celda);}
+  td select{padding-right:28px; background-position:right 6px center;}
+
+  /* --- Vista previa de la proforma (#pfItems): solo lectura, densa ---
+     Filas de 32 px y una fila de por medio sombreada, para seguir la vista en
+     notas de 40 o más ítems. */
+  #pfItems td{padding:4px 10px; height:32px;}
+  #pfItems td:has(.i-puerto){padding-top:2px; padding-bottom:2px;}   /* 28 px de desplegable + 4 = fila de 32 */
+  #pfItems tr:nth-child(even) td{background:#fafbfc;}
+  #pfItems tr:hover td{background:var(--hover);}
+  #pfItems td.desc{max-width:320px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}   /* el texto completo va en el title */
+  .sin-dato{color:var(--subtle);}
+  /* Desplegable de puerto "silencioso": parece texto hasta que se lo toca. */
+  #pfItems .i-puerto{height:28px; border-color:transparent; background-color:transparent; padding:0 26px 0 6px;}
+  #pfItems .i-puerto:hover{border-color:var(--line-strong);}
+  #pfItems .i-puerto:focus{border-color:var(--ring); background-color:var(--card);}
+
+  /* --- Tabla de ítems (#items): editable ---
+     Campos grises sin borde: se ven como celdas y no como 7 cajas por fila. El
+     borde aparece al pasar el mouse; con el foco, fondo blanco y anillo
+     celeste. .auto e .invalido (con !important) siguen ganando. */
+  #items td{padding:4px;}
   #items td:first-child{padding-left:0;}
+  #items input, #items select{background-color:#f6f7f9; border-color:transparent;}
+  #items input:hover, #items select:hover{border-color:var(--line-strong);}
+  #items input:focus, #items select:focus{background-color:var(--card); border-color:var(--ring); box-shadow:var(--ring-sombra);}
   #items .i-qty, #items .i-price{text-align:right; font-variant-numeric:tabular-nums;}
+
+  /* Encabezado de las tablas fijo debajo del encabezado de la página. Solo en
+     pantallas anchas: con overflow-x:auto la tabla es su propio marco de
+     desplazamiento y el "sticky" la correría hacia abajo; overflow-x:clip
+     corta igual lo que sobre pero no rompe el sticky. */
+  /* @supports: un navegador sin overflow-x:clip (Safari anterior a la 16) se
+     quedaría con overflow-x:auto y el encabezado bajaría 56 px tapando las
+     primeras filas. Ahí simplemente no queda fijo. */
+  @supports (overflow-x: clip){
+    @media (min-width:1100px){
+      .table-wrap{overflow-x:clip;}
+      th{position:sticky; top:var(--alto-topbar); z-index:2; background:var(--card);}
+    }
+  }
   .num{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap;}
   th.num{text-align:right;}
   .code, .i-sku{font-family:var(--mono); font-size:13px;}
@@ -167,14 +264,19 @@
   .del .ico{width:16px; height:16px;}
 
   /* ===== botones ===== */
-  .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:42px; border:1px solid transparent; border-radius:var(--r); padding:9px 18px; font-size:15px; font-weight:600; cursor:pointer; transition:background var(--dur), border-color var(--dur), transform 80ms;}
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; height:var(--alto-control); border:1px solid transparent; border-radius:var(--r); padding:0 18px; font-size:15px; font-weight:600; cursor:pointer; transition:background var(--dur), border-color var(--dur), transform 80ms;}
   .btn:active{transform:scale(.98);}
   .btn-brand{background:var(--brand); color:#fff;}
   .btn-brand:hover{background:var(--brand-hover);}
   .btn-ghost{background:var(--card); border-color:var(--line-strong); color:var(--ink);}
   .btn-ghost:hover{background:var(--hover);}
   .btn-block{width:100%;}
-  .loading{opacity:.6; pointer-events:none;}
+  .loading{opacity:.75; pointer-events:none;}
+  /* Botón ocupado: un círculo que gira en lugar del ícono. Con "reducir
+     movimiento" la regla del final apaga la animación y queda quieto. */
+  .btn.loading::before{content:''; width:16px; height:16px; flex:none; box-sizing:border-box; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:girar .7s linear infinite;}
+  .btn.loading .ico{display:none;}
+  @keyframes girar{to{transform:rotate(360deg);}}
   .card-foot{display:flex; justify-content:space-between; align-items:center; margin-top:14px; gap:10px; flex-wrap:wrap;}
 
   /* ===== barra de acción fija abajo ===== */
@@ -188,7 +290,7 @@
   #login{position:fixed; inset:0; background:var(--bg); z-index:50; display:flex; align-items:center; justify-content:center; padding:16px; overflow:hidden;}
   #grilla{position:absolute; inset:0; width:100%; height:100%; display:block;}
   /* fondo blanco a propósito: el logo PNG tiene fondo blanco, no transparente */
-  .login-box{position:relative; z-index:1; background:#fff; border:1px solid #e5e7eb; border-radius:18px; padding:34px 32px 30px; width:min(380px, 100%); box-shadow:0 24px 60px rgba(35,31,32,.10), 0 2px 6px rgba(35,31,32,.04);}
+  .login-box{position:relative; z-index:1; background:#fff; border:1px solid #e5e7eb; border-radius:var(--r-lg); padding:32px; width:min(400px, 100%); box-shadow:0 24px 60px rgba(35,31,32,.10), 0 2px 6px rgba(35,31,32,.04);}
   .login-lockup{display:flex; align-items:center; justify-content:center; gap:14px; margin-bottom:8px;}
   .login-logo{height:34px; width:auto; display:block;}
   .login-sep{width:1.5px; height:30px; background:var(--line-strong);}
@@ -201,13 +303,23 @@
   .blur span{display:inline-block; animation:blurIn .7s cubic-bezier(.2,.7,.2,1) both; animation-delay:calc(var(--i) * 70ms + 150ms);}
   @keyframes blurIn{from{filter:blur(10px); opacity:0; transform:translateY(-6px);} to{filter:none; opacity:1; transform:none;}}
   .login-box .btn{margin-top:14px;}
+  /* Contraseña con el botón del ojo adentro del campo. */
+  .pass-wrap{position:relative;}
+  .pass-wrap input{padding-right:46px;}
+  .pass-ver{position:absolute; right:2px; top:2px; width:36px; height:36px; border:none; border-radius:6px; background:transparent; color:var(--subtle); display:flex; align-items:center; justify-content:center; cursor:pointer;}
+  .pass-ver:hover{background:var(--hover); color:var(--ink);}
+  .caps-aviso{margin-top:6px; font-size:12.5px; font-weight:500; color:var(--warn);}
   .sr-only{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;}
   #loginErr{display:none; margin-top:12px; padding:10px 12px 10px 38px; border-radius:var(--r); font-size:14px; color:var(--err); background:var(--err-bg) var(--i-err) 12px 11px/18px no-repeat; border:1px solid var(--err-line);}
 
-  @media (max-width:900px){ .g5{grid-template-columns:1fr 1fr;} .g4{grid-template-columns:1fr 1fr;} }
+  @media (max-width:900px){
+    .s6{grid-column:span 12;}
+    .s2,.s3,.s4{grid-column:span 6;}
+  }
   @media (max-width:640px){
     .topbar{position:static;}   /* en el celular el encabezado no queda fijo: ocupa mucho */
-    .g3,.g4,.g5{grid-template-columns:1fr;} .span2{grid-column:auto;}
+    .s2,.s3,.s4,.s6,.s12{grid-column:span 12;}
+    .card-head-der{margin-left:0; width:100%;} .card-head-der select{flex:1;}
     .tabs{order:3; width:100%;} .tab{flex:1;}
     .card{padding:16px;} .table-wrap{margin:0 -16px; padding:0 16px;}
     .actionbar{bottom:8px;} .actionbar-cta{width:100%; justify-content:space-between; margin-left:0;}
@@ -226,11 +338,25 @@
       <span class="login-sep" aria-hidden="true"></span>
       <h1 id="loginTitle" class="blur" aria-label="Comex"><span style="--i:0" aria-hidden="true">C</span><span style="--i:1" aria-hidden="true">o</span><span style="--i:2" aria-hidden="true">m</span><span style="--i:3" aria-hidden="true">e</span><span style="--i:4" aria-hidden="true">x</span></h1>
     </div>
-    <p>Ingresá la contraseña del equipo para continuar.</p>
-    <label for="passInput">Contraseña</label>
-    <input type="password" id="passInput" autocomplete="current-password" autofocus>
-    <button class="btn btn-brand btn-block" id="loginBtn" type="button" onclick="doLogin()"><span class="btn-label">Entrar</span></button>
-    <div id="loginErr" role="alert"></div>
+    <p>Ingresá con tu mail de Mooving y tu contraseña.</p>
+    <!-- Es un <form> para que Enter envíe y el navegador ofrezca guardar la
+         contraseña. Nunca se envía de verdad: onsubmit lo frena, y además la
+         política de seguridad (form-action 'none') lo bloquearía. -->
+    <form id="loginForm" method="post" onsubmit="event.preventDefault(); doLogin()">
+      <label for="emailInput">Mail</label>
+      <input type="email" id="emailInput" autocomplete="username" inputmode="email" placeholder="nombre.apellido@moovingargentina.com.ar" autofocus>
+      <label for="passInput" style="margin-top:12px">Contraseña</label>
+      <div class="pass-wrap">
+        <input type="password" id="passInput" autocomplete="current-password" aria-describedby="capsAviso">
+        <button type="button" class="pass-ver" id="passVer" aria-label="Mostrar contraseña" aria-pressed="false" onclick="alternarClave_()">
+          <svg class="ico ojo-abierto" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg class="ico ojo-cerrado" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.4 10.4 0 0 1 12 5c6.5 0 10 7 10 7a13.2 13.2 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.5 13.5 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.39-1.61"/><path d="m2 2 20 20"/></svg>
+        </button>
+      </div>
+      <p id="capsAviso" class="caps-aviso" hidden>Bloq Mayús está activado</p>
+      <div id="loginErr" role="alert"></div>
+      <button class="btn btn-brand btn-block" id="loginBtn" type="submit"><span class="btn-label">Entrar</span></button>
+    </form>
   </div>
 </div>
 
@@ -241,7 +367,11 @@
       <button class="tab active" id="tabBtn2" role="tab" aria-selected="true" aria-controls="tab2" onclick="switchTab(2)">Generar proforma</button>
       <button class="tab" id="tabBtn1" role="tab" aria-selected="false" aria-controls="tab1" tabindex="-1" onclick="switchTab(1)">Agregar al Sheets</button>
     </div>
-    <span id="listState" class="status" role="status">Conectando…</span>
+    <div class="sesion">
+      <span id="listState" class="status" role="status">Conectando…</span>
+      <button class="link-btn" id="btnActualizar" type="button" onclick="actualizarAhora_()" title="Copiar ahora los datos del Sheet (clientes, listas y catálogo)" hidden>Actualizar</button>
+      <button class="link-btn" id="btnSalir" type="button" onclick="salir_()" hidden>Salir</button>
+    </div>
   </div>
 </header>
 
@@ -265,59 +395,61 @@
       <input type="file" id="fileNP" accept=".xls,.xlsx,.xlsm" hidden>
       <div id="npInfo" class="parseInfo" role="status"></div>
       <div id="npWarn" class="parseWarn"></div>
-      <p class="hint" id="npHint">Se incluyen solo los ítems con cantidad mayor a 0. El puerto se puede cambiar por ítem en la vista previa.</p>
+      <p class="hint" id="npHint">Solo entran los ítems con cantidad mayor a 0. El puerto se cambia por ítem al revisar.</p>
     </div>
 
     <div class="card">
       <h2><span class="step-n" data-paso="pfDatos">2</span>Datos de la proforma</h2>
-      <div class="grid g4">
-        <div><label for="pfEmpresa">Empresa emisora</label>
+      <p class="subtitulo">Cliente</p>
+      <div class="grid g12">
+        <div class="field s6"><label for="pfClienteSel">Cliente <span id="cliState" class="lbl-note"></span></label>
+          <select id="pfClienteSel"></select>
+          <input type="text" id="pfCliente" autocomplete="off" style="display:none;margin-top:6px" placeholder="Nombre del cliente" aria-label="Cliente (escrito a mano)">
+        </div>
+        <div class="field s3"><label for="pfPaisSel">País <span id="paisState" class="lbl-note"></span></label>
+          <select id="pfPaisSel"></select>
+          <input type="text" id="pfPais" autocomplete="off" style="display:none;margin-top:6px" placeholder="País" aria-label="País (escrito a mano)">
+        </div>
+        <div class="field s3"><label for="pfRut">RUT</label><input type="text" id="pfRut" class="code" placeholder="—"></div>
+        <div class="field s6"><label for="pfRazon">Razón social <span class="lbl-note lbl-der">la que se imprime</span></label>
+          <input type="text" id="pfRazon" placeholder="Nombre legal completo"></div>
+        <div class="field s4"><label for="pfDireccion">Dirección</label><input type="text" id="pfDireccion"></div>
+        <div class="field s2"><label for="pfCiudad">Ciudad</label><input type="text" id="pfCiudad"></div>
+      </div>
+      <p class="hint">Lo marcado <span class="tag-auto">auto</span> sale de «Datos Clientes Comex» y se puede editar. ¿Cliente nuevo? Elegí «Otro».</p>
+      <hr class="sep">
+      <p class="subtitulo">Proforma</p>
+      <div class="grid g12">
+        <div class="field s3"><label for="pfEmpresa">Empresa emisora</label>
           <select id="pfEmpresa">
             <option value="SAMEDY">SAMEDY S.A.</option>
             <option value="MVG">MVG TRADE S.A.S.</option>
           </select>
         </div>
-        <div><label for="pfFecha">Fecha</label><input type="date" id="pfFecha"></div>
-        <div class="span2"><label for="pfNro">N° de proforma</label><input type="text" id="pfNro" class="code" placeholder="Se arma solo: DD.MM.AAAA-CLIENTE"></div>
+        <div class="field s3"><label for="pfFecha">Fecha</label><input type="date" id="pfFecha"></div>
+        <div class="field s6"><label for="pfNro">N° de proforma <span class="lbl-note lbl-der">fecha + cliente, editable</span></label><input type="text" id="pfNro" class="code"></div>
+        <div class="field s12"><label for="pfPago">Condición de pago</label><input type="text" id="pfPago" value="Pago: 30% anticipo, saldo contra BL."></div>
       </div>
-      <div class="grid g3 mt">
-        <div><label for="pfClienteSel">Cliente <span id="cliState" class="lbl-note"></span></label>
-          <select id="pfClienteSel"></select>
-          <input type="text" id="pfCliente" autocomplete="off" style="display:none;margin-top:6px" placeholder="Nombre del cliente" aria-label="Cliente (escrito a mano)">
-        </div>
-        <div><label for="pfRazon">Razón social <span class="lbl-note">(es la que se imprime)</span></label>
-          <input type="text" id="pfRazon" placeholder="Nombre legal completo"></div>
-        <div><label for="pfRut">RUT</label><input type="text" id="pfRut" class="code" placeholder="—"></div>
-      </div>
-      <div class="grid g3 mt">
-        <div><label for="pfDireccion">Dirección</label><input type="text" id="pfDireccion"></div>
-        <div><label for="pfCiudad">Ciudad</label><input type="text" id="pfCiudad"></div>
-        <div><label for="pfPaisSel">País <span id="paisState" class="lbl-note"></span></label>
-          <select id="pfPaisSel"></select>
-          <input type="text" id="pfPais" autocomplete="off" style="display:none;margin-top:6px" placeholder="País" aria-label="País (escrito a mano)">
-        </div>
-      </div>
-      <div class="grid g3 mt">
-        <div class="span2"><label for="pfPago">Condición de pago</label><input type="text" id="pfPago" value="Pago: 30% anticipo, saldo contra BL."></div>
-      </div>
-      <p class="hint">Al elegir un cliente se completan solos razón social, RUT, dirección, ciudad y país (salen de la hoja «Datos Clientes Comex»); lo autocompletado se marca en verde. Si el cliente está cargado en varios países, elegí cuál en País. Si es un cliente nuevo, elegí «Otro» y completá los datos a mano.</p>
     </div>
 
     <div class="card">
-      <h2><span class="step-n" data-paso="pfRevisar">3</span>Vista previa</h2>
+      <div class="card-head">
+        <h2><span class="step-n" data-paso="pfRevisar">3</span>Revisar y descargar</h2>
+        <div class="card-head-der">
+          <label for="pfPuertoAll">Puerto para todos</label>
+          <select id="pfPuertoAll" onchange="setPuertoAll(this.value); this.selectedIndex=0;">
+            <option value="">Elegir…</option>
+          </select>
+        </div>
+      </div>
       <div class="table-wrap">
         <table>
           <thead><tr>
             <th>Código</th><th>EAN</th><th>Descripción</th>
-            <th class="num">Cantidad</th><th class="num">Precio unit.</th>
-            <th class="num">Monto total</th><th class="num">Qty/carton</th>
+            <th class="num">Cantidad</th><th class="num">Precio u. USD</th>
+            <th class="num">Monto total USD</th><th class="num">Qty/carton</th>
             <th class="num">Cartons</th><th class="num">CBM</th>
-            <th style="min-width:130px">Puerto
-              <select id="pfPuertoAll" onchange="setPuertoAll(this.value); this.selectedIndex=0;" aria-label="Aplicar un puerto a todos los ítems"
-                      style="margin-top:4px; min-height:30px; padding:3px 6px; font-size:12px; font-weight:400;">
-                <option value="">aplicar a todos…</option>
-              </select>
-            </th>
+            <th style="min-width:130px">Puerto</th>
           </tr></thead>
           <tbody id="pfItems"><tr class="empty"><td colspan="10">Subí una nota de pedido para ver los ítems.</td></tr></tbody>
         </table>
@@ -346,7 +478,7 @@
     </ol>
 
     <div class="card">
-      <h2><span class="step-n" data-paso="pf1">1</span>Proforma <span class="opt">opcional — también podés cargar a mano</span></h2>
+      <h2><span class="step-n" data-paso="pf1">1</span>Proforma <span class="opt">opcional: también podés cargar los ítems a mano</span></h2>
       <div id="drop" class="drop" role="button" tabindex="0">
         <svg class="ico drop-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
         <p class="drop-title" data-vacio="&lt;strong&gt;Arrastrá la proforma acá&lt;/strong&gt; o hacé clic para elegirla"><strong>Arrastrá la proforma acá</strong> o hacé clic para elegirla</p>
@@ -359,14 +491,14 @@
 
     <div class="card">
       <h2><span class="step-n" data-paso="gen1">2</span>Datos generales</h2>
-      <div class="grid g5">
-        <div><label for="cliente">Cliente</label><select id="cliente"></select></div>
-        <div><label for="pais">País</label><select id="pais"></select></div>
-        <div><label for="temporada">Temporada</label><input type="text" id="temporada" placeholder="COLORING"></div>
-        <div><label for="nroProforma">N° de proforma</label><input type="text" id="nroProforma" class="code" placeholder="Se completa al subir el archivo"></div>
-        <div><label for="fechaPf">Fecha de la proforma</label><input type="date" id="fechaPf"></div>
+      <div class="grid g12">
+        <div class="field s3"><label for="cliente">Cliente</label><select id="cliente"></select></div>
+        <div class="field s2"><label for="pais">País</label><select id="pais"></select></div>
+        <div class="field s2"><label for="temporada">Temporada</label><input type="text" id="temporada" placeholder="Ej.: COLORING"></div>
+        <div class="field s3"><label for="nroProforma">N° de proforma</label><input type="text" id="nroProforma" class="code" aria-describedby="nroAyuda"><p class="ayuda" id="nroAyuda">Se completa al subir el archivo</p></div>
+        <div class="field s2"><label for="fechaPf">Fecha de la proforma</label><input type="date" id="fechaPf" aria-describedby="fechaAyuda"><p class="ayuda" id="fechaAyuda">Vacía = año en curso</p></div>
       </div>
-      <p class="hint">La fecha de la proforma se lee sola del archivo y define el año de MES/AÑO, que es con el que FOB CHINA busca el costo. Si queda vacía se usa el año en curso. La columna FECHA, Quarter y FC Samedy se completan a mano en el Sheet, igual que ETD y ETA.</p>
+      <p class="hint">La fecha define MES/AÑO, con el que FOB CHINA busca el costo. FECHA, Quarter, FC Samedy, ETD y ETA se completan en el Sheet.</p>
     </div>
 
     <div class="card">
@@ -375,7 +507,7 @@
         <table>
           <thead><tr>
             <th style="min-width:110px">SKU</th><th style="min-width:180px">Descripción</th><th style="min-width:120px">Categoría</th>
-            <th style="min-width:84px">Cantidad</th><th style="min-width:104px">FOB vta (u.)</th>
+            <th class="num" style="min-width:84px">Cantidad</th><th class="num" style="min-width:104px">FOB vta USD</th>
             <th style="min-width:116px">Licencia</th><th style="min-width:108px">Sello</th>
             <th class="num" style="min-width:90px">Total</th><th style="width:44px"><span class="sr-only">Quitar</span></th>
           </tr></thead>
@@ -386,7 +518,7 @@
         <button class="btn btn-ghost" onclick="addItem()">
           <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Agregar ítem
         </button>
-        <p class="hint" style="margin:0; max-width:620px">Categoría, Licencia y Sello se completan solos según cómo se cargó ese SKU en el histórico del Dashboard. Si es un SKU nuevo quedan vacíos para que los elijas.</p>
+        <p class="hint" style="margin:0; max-width:620px">Escribí el SKU: categoría, licencia y sello se completan si ya está en el histórico.</p>
       </div>
     </div>
 
@@ -418,10 +550,23 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbwjwQNRrfL2lvnSWaqnyeiD
    cuál le está hablando la página (las URL de Apps Script solo se diferencian
    en esta parte). Se muestra en pantalla si algo no cierra. */
 const DEPLOY_ID_ = ((API_URL.match(/\/s\/([^/]+)/) || ['', '?'])[1]).slice(0, 14) + '…';
-/* La contraseña NO está en este archivo: la valida el Apps Script. */
+
+/* Supabase: el ingreso (mail y contraseña de cada usuario) y la lectura de los
+   datos. La URL y la clave pública NO son secretas: están pensadas para ir en
+   la página. Lo que protege los datos son las reglas de la base (solo leen los
+   usuarios habilitados), ver supabase/001_base_comex.sql.
+   Ninguna contraseña está en este archivo. */
+const SUPABASE_URL = 'https://nmsexzvctvduxrwqqikn.supabase.co';
+const SUPABASE_PUBLICA = 'sb_publishable_HcstvB15-e4DWajfePBaig_jfI2zSn9';
+
+/* Link "Abrir el Sheet" que aparece después de cargar filas. Vacío = no se
+   muestra. Solo abre para quien ya tenga permiso en el Sheet. */
+const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1IZjouQjlb0My0VqdPqIgzVugjGaqPWLe9BQBnyjZqf0/edit';
 /* =================================================== */
 
-let PASS  = sessionStorage.getItem('mv_pass') || '';
+// Limpieza: la página anterior guardaba la contraseña compartida en el navegador.
+try { sessionStorage.removeItem('mv_pass'); } catch(e) { /* nada */ }
+
 let LISTS = { clientes:[], paises:[], categorias:[], licencias:[], sellos:[] };
 let SKUS  = {};
 /* Clientes de la hoja "Datos Clientes Comex" (solo para la solapa Generar Proforma).
@@ -449,17 +594,136 @@ document.querySelector('.tabs').addEventListener('keydown', e => {
   e.preventDefault();
 });
 
+/* ================== SESIÓN (Supabase Auth) ================== */
+/* Se habla con Supabase con pedidos simples, sin la librería oficial: son
+   pocas funciones, no suman dependencias y no hace falta abrir la política de
+   seguridad de la página a otro CDN.
+   Queda guardada la SESIÓN (no la contraseña) en este navegador: por eso no
+   hay que volver a escribir la contraseña cada vez. "Salir" la borra. */
+const SESION_KEY_ = 'mv_sesion';
+let SESION = leerSesion_();
+function leerSesion_(){
+  try{
+    const s = JSON.parse(localStorage.getItem(SESION_KEY_) || 'null');
+    return s && s.refresh_token ? s : null;
+  }catch(e){ return null; }
+}
+function guardarSesion_(s){
+  SESION = s;
+  try{ s ? localStorage.setItem(SESION_KEY_, JSON.stringify(s)) : localStorage.removeItem(SESION_KEY_); }
+  catch(e){ /* navegador sin almacenamiento: la sesión dura hasta cerrar la pestaña */ }
+}
+function sesionDe_(d){
+  return {
+    access_token: d.access_token,
+    refresh_token: d.refresh_token,
+    expires_at: d.expires_at || Math.floor(Date.now() / 1000) + (d.expires_in || 3600),
+    email: (d.user && d.user.email) || (SESION && SESION.email) || '',
+  };
+}
+
+/* Los errores de red se marcan con deRed: JavaScript usa el mismo tipo de
+   error (TypeError) para "no hubo conexión" y para un error de programación,
+   y la página tiene que poder distinguirlos al avisar. */
+const deRed_ = e => { e.deRed = true; throw e; };
+
+async function supaAuth_(ruta, cuerpo, token){
+  const headers = { apikey: SUPABASE_PUBLICA, 'Content-Type': 'application/json' };
+  if(token) headers.Authorization = 'Bearer ' + token;
+  const r = await fetch(SUPABASE_URL + '/auth/v1/' + ruta,
+    { method: 'POST', headers, body: JSON.stringify(cuerpo || {}) }).catch(deRed_);
+  const d = await r.json().catch(() => ({}));
+  return { status: r.status, d };
+}
+
+/* Ingreso con mail y contraseña. Devuelve '' si entró, o el mensaje a mostrar. */
+async function ingresar_(email, password){
+  const { status, d } = await supaAuth_('token?grant_type=password', { email, password });
+  if(status === 200 && d.access_token){ guardarSesion_(sesionDe_(d)); return ''; }
+  const cod = String(d.error_code || d.error || '');
+  if(cod === 'invalid_credentials' || cod === 'invalid_grant') return MSG_CLAVE_MALA_;
+  if(status === 429 || cod === 'over_request_rate_limit') return MSG_DEMASIADOS_;
+  return 'No se pudo ingresar: ' + (d.msg || d.error_description || d.message || ('HTTP ' + status)) + '.';
+}
+
+/* Devuelve un token vigente, y lo renueva si vence en menos de un minuto.
+   null = no hay sesión, o Supabase la dio por terminada (cerrada, vencida o
+   revocada). Si dos pedidos piden renovar a la vez, se renueva una sola vez. */
+let RENOVANDO_ = null;
+async function tokenVigente_(){
+  if(!SESION) return null;
+  if(SESION.expires_at - 60 > Date.now() / 1000) return SESION.access_token;
+  if(!RENOVANDO_){
+    RENOVANDO_ = (async () => {
+      const { status, d } = await supaAuth_('token?grant_type=refresh_token', { refresh_token: SESION.refresh_token });
+      if(status === 200 && d.access_token){ guardarSesion_(sesionDe_(d)); return SESION.access_token; }
+      if(status >= 400 && status < 500){ guardarSesion_(null); return null; }
+      throw Object.assign(new Error('No se pudo renovar la sesión (HTTP ' + status + ')'), { deRed: true });
+    })().finally(() => { RENOVANDO_ = null; });
+  }
+  return RENOVANDO_;
+}
+
+/* Listas, clientes, catálogo y firma en un solo pedido a Supabase, con la
+   misma forma que devolvía el Apps Script (más la hora de la última copia). */
+async function supaDatos_(){
+  const t = await tokenVigente_();
+  if(!t) return { ok: false, error: 'AUTH' };
+  const r = await fetch(SUPABASE_URL + '/rest/v1/rpc/datos_iniciales', {
+    method: 'POST',
+    headers: { apikey: SUPABASE_PUBLICA, Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
+    body: '{}'
+  }).catch(deRed_);
+  const d = await r.json().catch(deRed_);
+  if(r.ok) return d;
+  if(r.status === 401 || /^PGRST3/.test(d.code || '')) return { ok: false, error: 'AUTH' };   // token inválido o vencido
+  if(d.code === '42501') return { ok: false, error: 'NO_HABILITADO' };                       // sesión válida, sin permiso
+  return { ok: false, error: d.message || ('HTTP ' + r.status) };
+}
+
+function mostrarBotonesSesion_(ver){
+  document.getElementById('btnActualizar').hidden = !ver;
+  const salir = document.getElementById('btnSalir');
+  salir.hidden = !ver;
+  salir.title = SESION && SESION.email ? 'Salir (' + SESION.email + ')' : 'Salir';
+}
+/* Termina la sesión: la borra de este navegador y también en Supabase. */
+function terminarSesion_(){
+  const t = SESION && SESION.access_token;
+  guardarSesion_(null);
+  mostrarBotonesSesion_(false);
+  if(t) supaAuth_('logout', {}, t).catch(() => { /* si no hay conexión, igual queda cerrada acá */ });
+}
+function salir_(){
+  terminarSesion_();
+  const badge = document.getElementById('listState');
+  badge.textContent = 'Sesión cerrada'; delete badge.dataset.estado;
+  showLogin();
+}
+
 /* ================== LOGIN ================== */
-function showLogin(err){
+/* err: el mensaje. detalle: un dato técnico (la implementación del Apps
+   Script) que va aparte, chico y en monoespaciada, no metido en la frase. */
+function showLogin(err, detalle){
   document.getElementById('login').style.display = 'flex';
   const e = document.getElementById('loginErr');
-  if(err){ e.style.display = 'block'; e.textContent = err; }
+  e.textContent = '';
+  if(err){
+    e.style.display = 'block';
+    e.append(err);
+    if(detalle){
+      const d = document.createElement('span');
+      d.className = 'err-detalle';
+      d.textContent = detalle;
+      e.append(d);
+    }
+  }
   else e.style.display = 'none';
   // El botón siempre vuelve a "Entrar": si antes hubo reintentos, podía
   // quedar diciendo "Reintentando (2)…".
-  const btn = document.getElementById('loginBtn');
-  btn.classList.remove('loading'); btn.querySelector('.btn-label').textContent = 'Entrar';
-  setTimeout(() => document.getElementById('passInput').focus(), 50);
+  libre_(document.getElementById('loginBtn'), 'Entrar');
+  const mail = document.getElementById('emailInput');
+  setTimeout(() => (mail.value ? document.getElementById('passInput') : mail).focus(), 50);
   grilla_().arrancar();
 }
 function hideLogin(){
@@ -467,136 +731,215 @@ function hideLogin(){
   grilla_().parar();               // la grilla solo corre mientras se ve el ingreso
 }
 async function doLogin(){
-  const p = document.getElementById('passInput').value;
-  if(!p) return;
   const btn = document.getElementById('loginBtn');
   // Si ya hay un intento en curso no se manda otro. La clase "loading" solo
-  // frena el mouse; sin esto, dos Enter seguidos mandaban dos intentos (y con
-  // una clave mala sumaban dos fallos al bloqueo).
+  // frena el mouse; sin esto, dos Enter seguidos mandaban dos intentos.
   if(btn.classList.contains('loading')) return;
-  PASS = p;
-  btn.classList.add('loading'); btn.querySelector('.btn-label').textContent = 'Entrando…';
+  const email = document.getElementById('emailInput').value.trim().toLowerCase();
+  const pass = document.getElementById('passInput').value;
+  if(!email || !pass) return showLogin('Completá el mail y la contraseña.');
+  ocupado_(btn, 'Entrando…');
+  let msg;
+  try{ msg = await ingresar_(email, pass); }
+  catch(e){ msg = e && e.deRed ? MSG_SIN_RED_ : 'Error inesperado en la página: ' + (e && e.message ? e.message : e) + '.'; }
+  if(msg) return showLogin(msg);
+  document.getElementById('passInput').value = '';   // la contraseña no queda en la pantalla
   const ok = await loadLists();
-  btn.classList.remove('loading'); btn.querySelector('.btn-label').textContent = 'Entrar';
-  if(ok){ sessionStorage.setItem('mv_pass', PASS); hideLogin(); }
-  else { PASS = ''; sessionStorage.removeItem('mv_pass'); }
+  libre_(btn, 'Entrar');
+  if(ok) hideLogin();
 }
-document.getElementById('passInput').addEventListener('keydown', e => { if(e.key === 'Enter') doLogin(); });
+// Enter ya envía el formulario (#loginForm): no hace falta escucharlo aparte.
+
+/* "Mostrar contraseña": alterna el campo entre oculto y visible. */
+function alternarClave_(){
+  const inp = document.getElementById('passInput'), btn = document.getElementById('passVer');
+  const ver = inp.type === 'password';
+  inp.type = ver ? 'text' : 'password';
+  btn.setAttribute('aria-pressed', ver ? 'true' : 'false');
+  btn.setAttribute('aria-label', ver ? 'Ocultar contraseña' : 'Mostrar contraseña');
+  // toggleAttribute y no .hidden: los <svg> no tienen esa propiedad.
+  btn.querySelector('.ojo-abierto').toggleAttribute('hidden', ver);
+  btn.querySelector('.ojo-cerrado').toggleAttribute('hidden', !ver);
+  inp.focus();
+}
+/* Aviso de Bloq Mayús: una contraseña con las mayúsculas trabadas es la causa
+   más común de "Mail o contraseña incorrectos". */
+['keydown', 'keyup'].forEach(ev => document.getElementById('passInput').addEventListener(ev, e => {
+  if(typeof e.getModifierState !== 'function') return;
+  document.getElementById('capsAviso').hidden = !e.getModifierState('CapsLock');
+}));
 
 /* ================== LISTAS + CATALOGO SKU ================== */
-/* Le pide datos al Apps Script SIEMPRE por POST.
-   Antes se pedían por GET con ?pass=... en la dirección, y eso deja la
-   contraseña escrita en el historial del navegador y en los registros del
-   servidor de Google. En el cuerpo de un POST no queda en ningún lado.
+/* Pedidos al Apps Script, SIEMPRE por POST (en una dirección quedarían
+   escritos en el historial y en los registros de Google). Lleva el token de
+   la sesión de Supabase: el Apps Script lo verifica antes de hacer nada.
    El 'text/plain' es a propósito: evita el pedido previo de CORS, que Apps
-   Script no responde bien. */
-function pedir_(parte){
-  // Los errores de red se marcan con deRed: JavaScript usa el mismo tipo de
-  // error (TypeError) para "no hubo conexión" y para un error de programación,
-  // y la página tiene que poder distinguirlos al avisar.
-  const deRed = e => { e.deRed = true; throw e; };
-  return fetch(API_URL, {
+   Script no responde bien. "extra" agrega campos (por ejemplo, otra acción). */
+async function pedir_(parte, extra){
+  const token = await tokenVigente_();
+  const r = await fetch(API_URL, {
     method: 'POST',
     headers: {'Content-Type': 'text/plain;charset=utf-8'},
-    body: JSON.stringify({ pass: PASS, accion: 'leer', parte: parte })
-  }).then(
-    r => r.json().catch(deRed),   // llegó algo que no es JSON (una página de error de Google)
-    deRed                         // no hubo conexión
-  );
+    body: JSON.stringify(Object.assign({ token: token, accion: 'leer', parte: parte }, extra || {}))
+  }).catch(deRed_);
+  return r.json().catch(deRed_);   // si no es JSON, llegó una página de error de Google
 }
 
-/* Reintenta un pedido cuando falla la conexión o el Apps Script da un error
+/* Reintenta un pedido cuando falla la conexión o el servidor da un error
    pasajero (por ejemplo, Google Sheets que tarda en responder después de un
-   rato sin uso). NUNCA reintenta AUTH ni BLOQUEADO: eso no es pasajero, y
-   cada reintento con la clave mala sumaría un intento fallido al bloqueo.
-   alReintentar(n) avisa en pantalla que se está reintentando. */
+   rato sin uso). NUNCA reintenta problemas de acceso: no son pasajeros.
+   "hacer" es la función que hace el pedido; alReintentar(n) avisa en pantalla. */
 const ESPERAS_REINTENTO_ = [1500, 4000];      // reintentos: a los 1,5 s y a los 4 s
-async function pedirConReintentos_(parte, alReintentar){
+const NO_REINTENTAR_ = ['AUTH', 'BLOQUEADO', 'NO_HABILITADO'];
+async function pedirConReintentos_(etiqueta, hacer, alReintentar){
   for(let n = 0; ; n++){
     try{
-      const d = await pedir_(parte);
-      if(d.ok || d.error === 'AUTH' || d.error === 'BLOQUEADO' || n >= ESPERAS_REINTENTO_.length) return d;
-      console.warn(`Pedido "${parte}": el servidor respondió "${d.error}" (intento ${n + 1}). Reintentando…`);
+      const d = await hacer();
+      if(d.ok || NO_REINTENTAR_.includes(d.error) || n >= ESPERAS_REINTENTO_.length) return d;
+      console.warn(`Pedido "${etiqueta}": el servidor respondió "${d.error}" (intento ${n + 1}). Reintentando…`);
     }catch(err){
-      if(n >= ESPERAS_REINTENTO_.length) throw err;
-      console.warn(`Pedido "${parte}": falló la conexión (${err.message}, intento ${n + 1}). Reintentando…`);
+      if(!(err && err.deRed) || n >= ESPERAS_REINTENTO_.length) throw err;
+      console.warn(`Pedido "${etiqueta}": falló la conexión (${err.message}, intento ${n + 1}). Reintentando…`);
     }
     if(alReintentar) alReintentar(n + 1);
     await new Promise(r => setTimeout(r, ESPERAS_REINTENTO_[n]));
   }
 }
 
+/* Trae listas, clientes, catálogo y firma. Primero de Supabase (rápido). Si
+   Supabase no responde, plan B: el Apps Script los lee directo del Sheet (más
+   lento, pero el trabajo no se frena). Devuelve true si quedó todo cargado. */
+let DATOS_FUENTE_ = '', DATOS_AL_ = null;
 async function loadLists(){
   const badge = document.getElementById('listState');
+  const alReintentar = n => {
+    badge.textContent = `Conectando (reintento ${n})…`;
+    const btn = document.getElementById('loginBtn');
+    if(btn.classList.contains('loading')) btn.querySelector('.btn-label').textContent = `Reintentando (${n})…`;
+  };
   try{
-    // Solo lo necesario para entrar: listas y clientes. El catálogo de SKU es
-    // lo pesado (1.859 productos) y se pide aparte, mientras ya estás usando la
-    // página. Antes se esperaba por todo junto y por eso el ingreso tardaba.
-    const data = await pedirConReintentos_('basico', n => {
-      badge.textContent = `Conectando (reintento ${n})…`;
-      const lbl = document.querySelector('#loginBtn .btn-label');
-      if(lbl) lbl.textContent = `Reintentando (${n})…`;
-    });
+    let data = null, fuente = 'Supabase';
+    try{ data = await pedirConReintentos_('datos', supaDatos_, alReintentar); }
+    catch(e){ if(!(e && e.deRed)) throw e; }
+    if(!data || (!data.ok && !NO_REINTENTAR_.includes(data.error))){
+      console.warn('Supabase no respondió (' + (data ? data.error : 'sin conexión') + '): se leen los datos por el Apps Script.');
+      fuente = 'Sheet';
+      data = await pedirConReintentos_('leer', () => pedir_(''), alReintentar);
+    }
     if(!data.ok){
-      if(data.error === 'AUTH' || data.error === 'BLOQUEADO'){
-        // Se escribió una clave, o se usó la guardada en el navegador.
-        const escrita = !!document.getElementById('passInput').value;
-        const habiaGuardada = !escrita && !!PASS;
-        // Una clave guardada que ya no sirve se borra: si no, cada recarga de
-        // la página la volvía a mandar y sumaba un intento fallido al bloqueo.
-        PASS = ''; sessionStorage.removeItem('mv_pass');
-        showLogin(data.error === 'BLOQUEADO' ? MSG_BLOQUEADO_
-          : escrita ? MSG_CLAVE_MALA_
-          : habiaGuardada ? MSG_CLAVE_VENCIDA_ : '');
-        badge.textContent = 'Esperando contraseña';
+      if(NO_REINTENTAR_.includes(data.error)){
+        if(data.error !== 'BLOQUEADO') terminarSesion_();
+        showLogin(data.error === 'NO_HABILITADO' ? MSG_NO_HABILITADO_
+          : data.error === 'BLOQUEADO' ? MSG_BLOQUEADO_ : MSG_SESION_VENCIDA_);
+        badge.textContent = 'Esperando ingreso'; delete badge.dataset.estado;
         return false;
       }
-      // Error que mandó el Apps Script (se marca para no confundirlo con un
+      // Error que mandó el servidor (se marca para no confundirlo con un
       // error de la propia página, ver el catch).
       throw Object.assign(new Error(data.error), { delServidor: true });
     }
-    LISTS = data.lists;
-    // 'basico' no trae el catálogo; solo se toca si viene (página vieja o, más
-    // adelante, Supabase). Antes esto lo vaciaba siempre: si la sesión vencía
-    // y se volvía a ingresar, el catálogo quedaba vacío hasta recargar.
-    if(data.skus){ SKUS = data.skus; SKUS_LISTOS = true; }
-    FIRMA_B64 = data.firma || '';   // si viene vacía, el Apps Script publicado es el viejo
-    // El desplegable de esta solapa combina las dos fuentes: la validación del
-    // Dashboard (que es la que manda para que el Sheet acepte la fila) más los
-    // clientes de "Datos Clientes Comex" que todavía no tienen histórico.
-    fillSelect('cliente', unirClientes_(LISTS.clientes, data.clientesComex), true);
-    fillSelect('pais', LISTS.paises, true);
-    cargarClientesComex_(data.clientesComex);
-    document.querySelectorAll('#items tr').forEach(tr => {
-      tr.querySelectorAll('select').forEach(refreshRowSelect);
-      applySku_(tr);
-    });
-    badge.dataset.estado = 'ok';
-    if(SKUS_LISTOS) mostrarCatalogoListo_(badge);
-    else { badge.textContent = 'Conectado · cargando catálogo…'; cargarSkus_(); }   // el catálogo, por atrás
+    aplicarDatos_(data, fuente);
     return true;
   }catch(e){
     badge.textContent = 'Sin conexión';
     badge.dataset.estado = 'err';
-    // Antes esto solo cambiaba el badge, que queda tapado por la pantalla de
-    // contraseña: apretabas "Entrar" y no pasaba nada. Ahora se avisa ahí.
     // Tres casos distintos:
-    //   - el Apps Script mandó un error (delServidor);
-    //   - no hubo conexión, o llegó algo que no es JSON (deRed, ver pedir_);
+    //   - el servidor mandó un error (delServidor);
+    //   - no hubo conexión, o llegó algo que no es JSON (deRed);
     //   - cualquier otra cosa es un error de la propia página.
     const sinRed = !!(e && e.deRed);
     const motivo = e && e.delServidor ? 'El servidor respondió con un error: ' + e.message + '.'
-      : sinRed ? 'No se pudo conectar con el servidor. Revisá la conexión y probá de nuevo.'
+      : sinRed ? MSG_SIN_RED_
       : 'Error inesperado en la página: ' + (e && e.message ? e.message : e) + '. Recargá con Ctrl+F5.';
     if(!sinRed && !(e && e.delServidor)) console.error(e);
-    showLogin(motivo + ' Implementación: ' + DEPLOY_ID_);
+    showLogin(motivo, 'Implementación: ' + DEPLOY_ID_);
     return false;
   }
 }
+
+/* Pone en la página los datos que llegaron (de Supabase o del Sheet). */
+function aplicarDatos_(data, fuente){
+  LISTS = data.lists;
+  // El catálogo solo se toca si viene. Antes se vaciaba siempre: si la sesión
+  // vencía y se volvía a ingresar, quedaba vacío hasta recargar.
+  if(data.skus){ SKUS = data.skus; SKUS_LISTOS = true; }
+  FIRMA_B64 = data.firma || '';
+  DATOS_FUENTE_ = fuente;
+  DATOS_AL_ = data.sincronizado_en ? new Date(data.sincronizado_en) : null;
+  // El desplegable de esta solapa combina las dos fuentes: la validación del
+  // Dashboard (que es la que manda para que el Sheet acepte la fila) más los
+  // clientes de "Datos Clientes Comex" que todavía no tienen histórico.
+  fillSelect('cliente', unirClientes_(LISTS.clientes, data.clientesComex), true);
+  fillSelect('pais', LISTS.paises, true);
+  cargarClientesComex_(data.clientesComex);
+  document.querySelectorAll('#items tr').forEach(tr => {
+    tr.querySelectorAll('select').forEach(refreshRowSelect);
+    applySku_(tr);
+  });
+  if(NP) renderPreview();
+  mostrarBotonesSesion_(fuente === 'Supabase' || !!SESION);
+  const badge = document.getElementById('listState');
+  badge.dataset.estado = 'ok';
+  if(SKUS_LISTOS) mostrarCatalogoListo_(badge);
+  else { badge.textContent = 'Conectado · cargando catálogo…'; cargarSkus_(); }   // el catálogo, por atrás
+}
+
+/* "Actualizar": copia ahora el Sheet a Supabase (lo hace el Apps Script) y
+   vuelve a traer los datos. silencioso = la pide la propia página después de
+   una carga al Dashboard, sin que nadie tenga que esperarla. */
+let ACTUALIZANDO_ = null;
+function actualizarAhora_(silencioso){
+  if(ACTUALIZANDO_) return ACTUALIZANDO_;
+  const btn = document.getElementById('btnActualizar');
+  const badge = document.getElementById('listState');
+  btn.disabled = true; btn.textContent = 'Actualizando…';
+  ACTUALIZANDO_ = (async () => {
+    try{
+      const r = await pedirConReintentos_('sincronizar', () => pedir_('', { accion: 'sincronizar' }));
+      if(!r.ok){
+        if(r.error === 'AUTH' || r.error === 'NO_HABILITADO'){
+          terminarSesion_();
+          showLogin(r.error === 'NO_HABILITADO' ? MSG_NO_HABILITADO_ : MSG_SESION_VENCIDA_);
+          return false;
+        }
+        throw new Error(r.error);
+      }
+      const d = await supaDatos_();
+      if(d.ok) aplicarDatos_(d, 'Supabase');
+      return true;
+    }catch(e){
+      const motivo = e && e.message ? e.message : String(e);
+      console.warn('No se pudo actualizar la copia: ' + motivo);
+      if(!silencioso){
+        badge.textContent = 'No se pudo actualizar';
+        badge.dataset.estado = 'warn';
+        badge.title = 'Motivo: ' + motivo + '. Los datos que se ven siguen siendo los de antes.';
+      }
+      return false;
+    }finally{
+      btn.disabled = false; btn.textContent = 'Actualizar';
+      ACTUALIZANDO_ = null;
+    }
+  })();
+  return ACTUALIZANDO_;
+}
+
+/* "hace 3 min", "hace 2 h", o la fecha si es más vieja. */
+function haceCuanto_(fecha){
+  const min = Math.round((Date.now() - fecha.getTime()) / 60000);
+  if(min < 1) return 'recién';
+  if(min < 60) return `hace ${min} min`;
+  if(min < 24 * 60) return `hace ${Math.round(min / 60)} h`;
+  return 'del ' + fecha.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
 const MSG_BLOQUEADO_ = 'Hubo demasiados intentos fallidos y el acceso quedó bloqueado por 15 minutos. ' +
   'La contraseña puede estar bien: esperá y probá de nuevo.';
-const MSG_CLAVE_MALA_ = 'Contraseña incorrecta';
-const MSG_CLAVE_VENCIDA_ = 'La contraseña guardada ya no es válida (¿cambió?). Ingresala de nuevo.';
+const MSG_CLAVE_MALA_ = 'Mail o contraseña incorrectos.';
+const MSG_DEMASIADOS_ = 'Demasiados intentos seguidos. Esperá unos minutos y probá de nuevo.';
+const MSG_SESION_VENCIDA_ = 'Tu sesión terminó (venció o se cerró). Ingresá de nuevo.';
+const MSG_NO_HABILITADO_ = 'Tu usuario existe pero no está habilitado para Comex. Pedile al administrador que lo habilite.';
+const MSG_SIN_RED_ = 'No se pudo conectar. Revisá la conexión y probá de nuevo.';
 
 /* El catálogo de SKU se trae aparte, sin frenar el ingreso. Mientras no esté,
    la página funciona igual: lo único que falta es que se completen solos
@@ -607,16 +950,35 @@ const MSG_CLAVE_VENCIDA_ = 'La contraseña guardada ya no es válida (¿cambió?
    antes de dar el aviso. El motivo del último error queda en el aviso (al
    pasar el mouse) y en la consola. */
 let SKUS_LISTOS = false, SKUS_PIDIENDO = null;
+/* Aviso del encabezado: cuántos SKU hay y de cuándo son los datos (la copia
+   de Supabase se actualiza cada 15 min en horario laboral). Si la copia tiene
+   más de un día, queda en naranja para que se toque "Actualizar". */
+const COPIA_VIEJA_MIN_ = 24 * 60;
 function mostrarCatalogoListo_(badge){
-  badge.textContent = `Conectado · ${Object.keys(SKUS).length.toLocaleString('es-AR')} SKU en catálogo`;
-  badge.dataset.estado = 'ok';          // por si venía en naranja de un fallo anterior
-  badge.removeAttribute('title');
+  const n = Object.keys(SKUS).length.toLocaleString('es-AR');
+  let txt = `Conectado · ${n} SKU`, estado = 'ok', titulo = '';
+  if(DATOS_FUENTE_ === 'Sheet'){
+    txt += ' · leídos del Sheet';
+    titulo = 'Supabase no respondió: los datos se leyeron directo del Sheet (más lento).';
+  } else if(DATOS_AL_){
+    txt += ' · datos ' + haceCuanto_(DATOS_AL_);
+    titulo = 'Última copia del Sheet: ' + DATOS_AL_.toLocaleString('es-AR');
+    if((Date.now() - DATOS_AL_.getTime()) / 60000 > COPIA_VIEJA_MIN_){
+      estado = 'warn';
+      titulo += '. Tiene más de un día: tocá "Actualizar".';
+    }
+  }
+  badge.textContent = txt;
+  badge.dataset.estado = estado;
+  if(titulo) badge.title = titulo; else badge.removeAttribute('title');
 }
+// El "hace X min" se mantiene al día solo.
+setInterval(() => { if(SKUS_LISTOS && DATOS_AL_) mostrarCatalogoListo_(document.getElementById('listState')); }, 60000);
 function cargarSkus_(){
   if(SKUS_LISTOS) return Promise.resolve(true);
   if(SKUS_PIDIENDO) return SKUS_PIDIENDO;
   const badge = document.getElementById('listState');
-  SKUS_PIDIENDO = pedirConReintentos_('skus', n => {
+  SKUS_PIDIENDO = pedirConReintentos_('skus', () => pedir_('skus'), n => {
       badge.textContent = `Conectado · cargando catálogo (reintento ${n})…`;
     })
     .then(d => {
@@ -858,7 +1220,7 @@ function addItem(data = {}){
     <td><select class="i-lic" aria-label="Licencia" data-kind="licencias"></select></td>
     <td><select class="i-sello" aria-label="Sello" data-kind="sellos"></select></td>
     <td class="subtotal i-sub">—</td>
-    <td><button class="del" type="button" title="Quitar ítem" aria-label="Quitar ítem" onclick="this.closest('tr').remove();recalc()"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></td>`;
+    <td><button class="del" type="button" title="Quitar ítem" aria-label="Quitar ítem" onclick="quitarFila_(this)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></td>`;
   tb.appendChild(tr);
   tr.querySelectorAll('select').forEach(refreshRowSelect);
   applySku_(tr);
@@ -867,6 +1229,43 @@ function addItem(data = {}){
   tr.querySelectorAll('select').forEach(s => s.addEventListener('change', () => s.classList.remove('auto')));
   recalc();
   return tr;
+}
+/* Quitar un ítem con "Deshacer" durante 8 segundos: un clic de más en la ✕
+   ya no borra el trabajo. La fila no se destruye, se saca de la tabla y se
+   guarda junto con la que le seguía, para volver a ponerla en el mismo lugar
+   (con sus valores y sus eventos intactos). */
+const DESHACER_MS_ = 8000;
+let QUITADA_ = null;   // { tr, siguiente, timer }
+function quitarFila_(btn){
+  const tr = btn.closest('tr');
+  if(!tr) return;
+  if(QUITADA_) clearTimeout(QUITADA_.timer);    // la anterior ya no se puede deshacer
+  const sku = tr.querySelector('.i-sku').value.trim();
+  QUITADA_ = { tr, siguiente: tr.nextElementSibling, timer: 0 };
+  tr.remove();
+  recalc();
+  const quitada = QUITADA_;
+  showMsg('msg', 'info', `Ítem ${sku || 'sin SKU'} quitado.`, {
+    accion: { etiqueta: 'Deshacer', alHacerClic: () => deshacerQuitar_(quitada) }
+  });
+  quitada.timer = setTimeout(() => {
+    if(QUITADA_ !== quitada) return;
+    QUITADA_ = null;
+    const m = document.getElementById('msg');
+    if(m.classList.contains('info')) m.className = 'msg';   // se va el aviso
+  }, DESHACER_MS_);
+}
+function deshacerQuitar_(quitada){
+  if(QUITADA_ !== quitada) return;
+  clearTimeout(quitada.timer);
+  QUITADA_ = null;
+  const tb = document.getElementById('items');
+  // Si la que le seguía ya no está en la tabla, va al final.
+  if(quitada.siguiente && quitada.siguiente.parentNode === tb) tb.insertBefore(quitada.tr, quitada.siguiente);
+  else tb.appendChild(quitada.tr);
+  recalc();
+  document.getElementById('msg').className = 'msg';
+  quitada.tr.querySelector('.i-sku').focus();
 }
 /* Escapa TODO lo que puede romper el HTML, no solo las comillas.
    Antes solo cambiaba " por &quot;, así que un texto como
@@ -881,9 +1280,18 @@ function esc(s){
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+/* Nombre de cada columna de la tabla de ítems, para los aria-label ("SKU,
+   fila 3"): un lector de pantalla tiene que saber en qué fila está, y el
+   número cambia al quitar una fila. */
+const ETIQUETAS_FILA_ = { '.i-sku':'SKU', '.i-desc':'Descripción', '.i-cat':'Categoría', '.i-qty':'Cantidad',
+  '.i-price':'FOB venta por unidad', '.i-lic':'Licencia', '.i-sello':'Sello', '.del':'Quitar ítem' };
 function recalc(){
   let total = 0, unidades = 0, conDatos = 0;
-  document.querySelectorAll('#items tr').forEach(tr => {
+  document.querySelectorAll('#items tr').forEach((tr, i) => {
+    Object.keys(ETIQUETAS_FILA_).forEach(cls => {
+      const el = tr.querySelector(cls);
+      if(el) el.setAttribute('aria-label', `${ETIQUETAS_FILA_[cls]}, fila ${i + 1}`);
+    });
     const q = parseFloat(tr.querySelector('.i-qty').value) || 0;
     const p = parseFloat(tr.querySelector('.i-price').value) || 0;
     const s = q * p;
@@ -1233,6 +1641,8 @@ function applyProforma_(p, file){
 
 /* ===== solapa 1: envío ===== */
 async function submitAll(){
+  const btn = document.getElementById('send');
+  if(btn.classList.contains('loading')) return;    // ya hay un envío en curso: no se manda dos veces
   const msg = document.getElementById('msg');
   msg.className = 'msg'; msg.style.display = 'none';
   const g = id => document.getElementById(id).value.trim();
@@ -1242,8 +1652,11 @@ async function submitAll(){
     anio: g('fechaPf').slice(0, 4)   // año de MES/AÑO; vacío = el Apps Script usa el año en curso
   };
   if(!general.cliente || !general.pais){
-    showMsg('msg','err', 'Completá al menos Cliente y País.');
-    return marcarInvalido_(['cliente', 'pais'].filter(id => !g(id)).map(id => document.getElementById(id)));
+    // El aviso nombra SOLO lo que falta.
+    const faltanGen = [['cliente', 'Cliente', 'Elegí el cliente.'], ['pais', 'País', 'Elegí el país.']]
+      .filter(([id]) => !g(id));
+    showMsg('msg','err', faltanTexto_(faltanGen.map(f => f[1])));
+    return marcarInvalido_(faltanGen.map(([id, , motivo]) => ({ el: document.getElementById(id), motivo })));
   }
   const items = [], filas = [];
   document.querySelectorAll('#items tr').forEach(tr => {
@@ -1264,35 +1677,49 @@ async function submitAll(){
   }
   // Se marcan en rojo TODOS los campos que faltan, no solo se avisa abajo:
   // así se ve de un vistazo qué fila y qué columna hay que completar.
-  const faltan = [];
+  const faltan = [], queFalta = new Set();
   items.forEach((it, k) => {
-    if(!it.categoria) faltan.push(filas[k].querySelector('.i-cat'));
-    if(!it.qty)       faltan.push(filas[k].querySelector('.i-qty'));
-    if(!it.fobVta)    faltan.push(filas[k].querySelector('.i-price'));
+    if(!it.categoria){ faltan.push(filas[k].querySelector('.i-cat'));   queFalta.add('Categoría'); }
+    if(!it.qty)      { faltan.push(filas[k].querySelector('.i-qty'));   queFalta.add('Cantidad'); }
+    if(!it.fobVta)   { faltan.push(filas[k].querySelector('.i-price')); queFalta.add('FOB vta'); }
   });
   if(faltan.length){
     const k = items.findIndex(i => !i.qty || !i.fobVta || !i.categoria);
     const filasMal = new Set(faltan.map(el => el.closest('tr'))).size;
-    showMsg('msg','err', `Falta Categoría, Cantidad o FOB vta en ${filasMal === 1 ? 'el ítem ' + (items[k].sku || items[k].descripcion) : filasMal + ' ítems'}. Están marcados en rojo.`);
+    // Nombra solo las columnas que de verdad faltan ("Falta Categoría en el ítem 1418253").
+    showMsg('msg','err', `Falta ${listaNatural_([...queFalta])} en ${filasMal === 1 ? 'el ítem ' + (items[k].sku || items[k].descripcion) : filasMal + ' ítems'}. Están marcados en rojo.`);
     return marcarInvalido_(faltan);
   }
 
-  const btn = document.getElementById('send');
-  btn.classList.add('loading'); btn.querySelector('.btn-label').textContent = 'Cargando…';
+  ocupado_(btn, `Enviando ${items.length} fila${items.length === 1 ? '' : 's'}…`);
   try{
+    const token = await tokenVigente_();
+    if(!token){ terminarSesion_(); showLogin(MSG_SESION_VENCIDA_); throw new Error('la sesión terminó: ingresá de nuevo y volvé a tocar "Agregar al Sheets"'); }
     const res = await fetch(API_URL, {
       method: 'POST',
       headers: {'Content-Type': 'text/plain;charset=utf-8'},
-      body: JSON.stringify({ pass: PASS, rows: items })
-    });
-    const data = await res.json();
+      body: JSON.stringify({ token: token, rows: items })
+    }).catch(deRed_);
+    const data = await res.json().catch(deRed_);
     if(!data.ok){
-      if(data.error === 'AUTH'){ showLogin('La sesión expiró, ingresá la contraseña de nuevo.'); throw new Error('contraseña inválida'); }
-      if(data.error === 'BLOQUEADO'){ showLogin(MSG_BLOQUEADO_); throw new Error('acceso bloqueado por 15 minutos'); }
+      if(data.error === 'AUTH' || data.error === 'NO_HABILITADO'){
+        terminarSesion_();
+        showLogin(data.error === 'NO_HABILITADO' ? MSG_NO_HABILITADO_ : MSG_SESION_VENCIDA_);
+        throw new Error('la sesión terminó: ingresá de nuevo y volvé a tocar "Agregar al Sheets"');
+      }
       throw new Error(data.error);
     }
-    showMsg('msg','ok', `Se cargaron ${data.added} fila(s) en el Dashboard (desde la fila ${data.firstRow}).`);
+    showMsg('msg','ok', `, desde la fila ${data.firstRow}.`, {
+      titulo: `${data.added} fila${data.added === 1 ? ' agregada' : 's agregadas'} al Dashboard`,
+      link: SHEET_URL ? { etiqueta: 'Abrir el Sheet', href: SHEET_URL } : null
+    });
+    // La copia de Supabase se actualiza por detrás, sin hacer esperar: así los
+    // SKU nuevos se reconocen solos la próxima vez.
+    actualizarAhora_(true);
     document.getElementById('fechaPf').value = '';
+    // También el N°: si no, una carga a mano siguiente salía con el número de
+    // la proforma anterior.
+    document.getElementById('nroProforma').value = '';
     document.getElementById('items').innerHTML = '';
     document.getElementById('parseInfo').style.display = 'none';
     document.getElementById('parseWarn').style.display = 'none';
@@ -1302,19 +1729,78 @@ async function submitAll(){
     addItem();
     recalc();
   }catch(err){
-    showMsg('msg','err', 'No se pudo cargar: ' + err.message);
+    // Si fue la conexión, se ofrece reintentar con los mismos datos (siguen en
+    // la tabla). Ojo: si el envío llegó pero se cortó la respuesta, reintentar
+    // duplicaría las filas; por eso el aviso pide revisar el Sheet antes.
+    showMsg('msg','err', 'No se pudo cargar: ' + err.message +
+      (err && err.deRed ? ' Antes de reintentar, fijate en el Sheet que no se hayan agregado.' : ''),
+      err && err.deRed ? { accion: { etiqueta: 'Reintentar', alHacerClic: submitAll } } : undefined);
   }finally{
-    btn.classList.remove('loading'); btn.querySelector('.btn-label').textContent = 'Agregar al Sheets';
+    libre_(btn, 'Agregar al Sheets');
   }
 }
-function showMsg(id, cls, text){
+/* Mensaje debajo de cada solapa (#msg, #pfMsg).
+   opciones (todas opcionales):
+     titulo  texto en negrita antes del mensaje;
+     accion  { etiqueta, alHacerClic }: un botón a la derecha;
+     link    { etiqueta, href }: un link a la derecha (se abre en otra pestaña).
+   Se arma con createElement y textContent: los textos pueden traer nombres de
+   archivo o SKU, y así nunca se interpretan como HTML. */
+function showMsg(id, cls, text, opciones){
+  const o = opciones || {};
   const msg = document.getElementById(id);
   // submitAll lo oculta con style.display = 'none' al empezar; si no se borra
   // acá, ese estilo le gana a la clase y el mensaje nunca se ve.
   msg.style.display = '';
   msg.dataset.validacion = '';
-  msg.className = 'msg ' + cls; msg.textContent = text;
-  msg.scrollIntoView({behavior:'smooth', block:'nearest'});
+  msg.className = 'msg ' + cls;
+  msg.textContent = '';
+  const cuerpo = document.createElement('span');
+  cuerpo.className = 'msg-texto';
+  if(o.titulo){
+    const t = document.createElement('strong');
+    t.textContent = o.titulo;
+    cuerpo.append(t);
+    // sin espacio si el texto sigue con un signo (", desde la fila 2.")
+    if(text) cuerpo.append(/^[,.;:]/.test(text) ? text : ' ' + text);
+  } else {
+    cuerpo.textContent = text;
+  }
+  msg.append(cuerpo);
+  if(o.accion){
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'msg-accion';
+    b.textContent = o.accion.etiqueta;
+    b.addEventListener('click', () => o.accion.alHacerClic());
+    msg.append(b);
+  } else if(o.link){
+    const a = document.createElement('a');
+    a.className = 'msg-accion';
+    a.href = o.link.href; a.target = '_blank'; a.rel = 'noopener noreferrer';
+    a.textContent = o.link.etiqueta;
+    msg.append(a);
+  }
+  msg.scrollIntoView({behavior: MOV_REDUCIDO_.matches ? 'auto' : 'smooth', block:'nearest'});
+}
+/* "Cliente y País", "Categoría, Cantidad y FOB vta". */
+function listaNatural_(cosas){
+  return cosas.length < 2 ? (cosas[0] || '') : cosas.slice(0, -1).join(', ') + ' y ' + cosas[cosas.length - 1];
+}
+/* "Faltan 2 datos: Cliente y País." / "Falta 1 dato: Fecha." */
+function faltanTexto_(nombres){
+  return nombres.length === 1 ? `Falta 1 dato: ${nombres[0]}.` : `Faltan ${nombres.length} datos: ${listaNatural_(nombres)}.`;
+}
+/* Botón ocupado: círculo que gira (CSS), aria-busy y el texto de lo que está
+   haciendo. libre_ lo deja como estaba. */
+function ocupado_(btn, texto){
+  btn.classList.add('loading');
+  btn.setAttribute('aria-busy', 'true');
+  if(texto) btn.querySelector('.btn-label').textContent = texto;
+}
+function libre_(btn, texto){
+  btn.classList.remove('loading');
+  btn.removeAttribute('aria-busy');
+  if(texto) btn.querySelector('.btn-label').textContent = texto;
 }
 
 /* ================================================================
@@ -1446,7 +1932,7 @@ function setPuertoAll(val){
 function renderPreview(){
   const all = document.getElementById('pfPuertoAll');
   if(all && all.options.length === 1)
-    all.innerHTML = '<option value="">aplicar a todos…</option>' + PUERTOS.map(p => `<option>${p}</option>`).join('');
+    all.innerHTML = '<option value="">Elegir…</option>' + PUERTOS.map(p => `<option>${esc(p)}</option>`).join('');
   const tb = document.getElementById('pfItems');
   const items = allItems();
   if(!items.length){
@@ -1459,11 +1945,15 @@ function renderPreview(){
   let tQty = 0, tMonto = 0, tCajas = 0, tCbm = 0;
   tb.innerHTML = items.map((it, idx) => {
     tQty += it.qty; tMonto += it.total; tCajas += Number(it.cajas) || 0; tCbm += it.cbm;
+    // "USD" va en el encabezado de la columna, no en cada celda. Un EAN vacío
+    // dice "sin EAN" (antes "—", que no se distinguía de un cero).
     return `<tr>
-      <td class="code">${esc(it.sku)}</td><td class="code">${esc(it.ean || '—')}</td><td>${esc(it.desc)}</td>
+      <td class="code">${esc(it.sku)}</td>
+      <td class="code">${it.ean ? esc(it.ean) : '<span class="sin-dato">sin EAN</span>'}</td>
+      <td class="desc" title="${esc(it.desc)}">${esc(it.desc)}</td>
       <td class="num">${it.qty.toLocaleString('en-US')}</td>
-      <td class="num">USD ${fmt(it.fob)}</td>
-      <td class="num">USD ${fmt(it.total)}</td>
+      <td class="num">${fmt(it.fob)}</td>
+      <td class="num">${fmt(it.total)}</td>
       <td class="num">${it.master || ''}</td>
       <td class="num">${it.cajas || ''}</td>
       <td class="num">${it.cbm ? it.cbm.toFixed(3) : ''}</td>
@@ -1502,28 +1992,30 @@ function b64ToBytes_(b64){
   return bytes;
 }
 async function genProforma(){
+  const btn = document.getElementById('genBtn');
+  if(btn.classList.contains('loading')) return;    // ya se está generando: no se arma dos veces
   const g = id => document.getElementById(id).value.trim();
   const items = allItems();
   if(!items.length){
     showMsg('pfMsg','err','Subí primero una nota de pedido con ítems.');
-    return marcarInvalido_([dropNP]);
+    return marcarInvalido_([{ el: dropNP, motivo: 'Subí la nota de pedido.' }]);
   }
   if(!g('pfCliente') || !g('pfPais') || !g('pfFecha')){
-    showMsg('pfMsg','err','Completá Cliente, País y Fecha. Están marcados en rojo.');
     // Cliente y País pueden estar en el desplegable o en el campo de texto
     // (si se eligió "Otro"): se marca el que se está viendo.
     const visible = (sel, inp) => document.getElementById(inp).style.display === 'none'
       ? document.getElementById(sel) : document.getElementById(inp);
-    const faltan = [];
-    if(!g('pfCliente')) faltan.push(visible('pfClienteSel', 'pfCliente'));
-    if(!g('pfPais'))    faltan.push(visible('pfPaisSel', 'pfPais'));
-    if(!g('pfFecha'))   faltan.push(document.getElementById('pfFecha'));
+    const faltan = [], nombres = [];
+    if(!g('pfCliente')){ faltan.push({ el: visible('pfClienteSel', 'pfCliente'), motivo: 'Elegí el cliente.' }); nombres.push('Cliente'); }
+    if(!g('pfPais'))   { faltan.push({ el: visible('pfPaisSel', 'pfPais'), motivo: 'Elegí el país.' });         nombres.push('País'); }
+    if(!g('pfFecha'))  { faltan.push({ el: document.getElementById('pfFecha'), motivo: 'Elegí la fecha.' });     nombres.push('Fecha'); }
+    showMsg('pfMsg','err', faltanTexto_(nombres));   // nombra SOLO lo que falta
     return marcarInvalido_(faltan);
   }
   // Sin firma no se genera: una proforma sin firmar podría mandarse por error.
   if(!FIRMA_B64) return showMsg('pfMsg','err',
-    'No llegó la firma desde el Apps Script. Falta publicar el Code.gs nuevo con «Nueva versión» ' +
-    '(o recargá la página con Ctrl+F5). Implementación: ' + DEPLOY_ID_);
+    'No llegó la firma. Tocá «Actualizar» arriba a la derecha o recargá la página con Ctrl+F5. ' +
+    'Si sigue igual, falta cargarla en Supabase (supabase/002_firma.sql).');
 
   // En la proforma se imprime la RAZÓN SOCIAL (el nombre legal). Si está vacía
   // —cliente nuevo cargado a mano— se usa lo que haya en Cliente.
@@ -1534,8 +2026,7 @@ async function genProforma(){
   const fecha = new Date(Date.UTC(y, m - 1, d));
   const nro = g('pfNro') || `${String(d).padStart(2,'0')}.${String(m).padStart(2,'0')}.${y}`;
 
-  const btn = document.getElementById('genBtn');
-  btn.classList.add('loading'); btn.querySelector('.btn-label').textContent = 'Generando…';
+  ocupado_(btn, 'Generando…');
   try{
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Sheet1', { views: [{ showGridLines: false }] });
@@ -1656,11 +2147,15 @@ async function genProforma(){
     // en Firefox y Safari.
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     const tot = items.reduce((s, i) => s + i.total, 0);
-    showMsg('pfMsg','ok', `Proforma generada: PI ${nro}.xlsx — ${items.length} ítems, USD ${fmt(tot)}. Ya la podés subir al Sheets desde la otra solapa.`);
+    showMsg('pfMsg','ok', `PI ${nro}.xlsx · ${items.length} ítem${items.length === 1 ? '' : 's'} · USD ${fmt(tot)}`, {
+      titulo: 'Proforma descargada.',
+      accion: { etiqueta: 'Cargarla al Sheets', alHacerClic: () => switchTab(1) }
+    });
   }catch(err){
-    showMsg('pfMsg','err', 'No se pudo generar: ' + err.message);
+    showMsg('pfMsg','err', 'No se pudo generar: ' + err.message,
+      { accion: { etiqueta: 'Reintentar', alHacerClic: genProforma } });
   }finally{
-    btn.classList.remove('loading'); btn.querySelector('.btn-label').textContent = 'Descargar proforma';
+    libre_(btn, 'Descargar proforma');
   }
 }
 
@@ -1750,21 +2245,47 @@ function grilla_(){
 
 /* Errores al lado del campo: se marca en rojo lo que falta y se lleva el foco
    al primero. La marca se va sola apenas se edita el campo. */
+/* Cada elemento de la lista puede ser el campo solo, o { el, motivo }: el
+   motivo se escribe debajo del campo (<p class="field-err">) y queda unido a
+   él con aria-describedby, así también lo anuncia un lector de pantalla. En
+   las celdas de la tabla no se agrega texto (agrandaría la fila): ahí alcanza
+   con el rojo y el mensaje de arriba, que dice qué falta. */
+let ERR_SEQ_ = 0;
 function marcarInvalido_(els){
   // El mensaje que se acaba de mostrar es de validación: se borra solo
   // cuando se completa lo que falta (ver actualizarPasos_).
   document.querySelectorAll('.msg.err').forEach(m => { m.dataset.validacion = '1'; });
-  els = (els || []).filter(Boolean);
-  els.forEach(el => { el.classList.add('invalido'); el.setAttribute('aria-invalid', 'true'); });
-  if(els[0]){
-    els[0].scrollIntoView({ block: 'center' });
-    els[0].focus({ preventScroll: true });
+  const lista = (els || []).filter(Boolean).map(x => x.el ? x : { el: x, motivo: '' }).filter(x => x.el);
+  lista.forEach(({ el, motivo }) => {
+    el.classList.add('invalido');
+    el.setAttribute('aria-invalid', 'true');
+    if(!motivo || el._errP || el.closest('td')) return;
+    const p = document.createElement('p');
+    p.className = 'field-err';
+    p.id = 'err-' + (++ERR_SEQ_);
+    p.textContent = motivo;
+    const field = el.closest('.field');
+    if(field) field.append(p); else el.after(p);
+    el.setAttribute('aria-describedby', ((el.getAttribute('aria-describedby') || '') + ' ' + p.id).trim());
+    el._errP = p;
+  });
+  const primero = lista[0] && lista[0].el;
+  if(primero){
+    primero.scrollIntoView({ block: 'center' });
+    primero.focus({ preventScroll: true });
   }
 }
 function limpiarInvalido_(el){
   if(!el || !el.classList || !el.classList.contains('invalido')) return;
   el.classList.remove('invalido');
   el.removeAttribute('aria-invalid');
+  if(el._errP){
+    const id = el._errP.id;
+    el._errP.remove();
+    el._errP = null;
+    const resto = (el.getAttribute('aria-describedby') || '').split(' ').filter(x => x && x !== id).join(' ');
+    if(resto) el.setAttribute('aria-describedby', resto); else el.removeAttribute('aria-describedby');
+  }
 }
 
 /* Zona de archivo: grande cuando está vacía, una franja chica cuando ya hay
@@ -1833,7 +2354,10 @@ function actualizarPasos_(){
   const generalOk = !!(v('cliente') && v('pais'));
   const itemsOk = filas.length > 0 && filas.every(tr =>
     tr.querySelector('.i-qty').value && tr.querySelector('.i-price').value && tr.querySelector('.i-cat').value);
-  setPaso_('pf1', filas.length ? 'hecho' : 'actual');
+  // La proforma es opcional: queda "actual" solo si todavía no hay filas Y
+  // faltan los datos generales. Antes, después de cargar, quedaban dos pasos
+  // "actuales" a la vez.
+  setPaso_('pf1', filas.length ? 'hecho' : (generalOk ? '' : 'actual'));
   setPaso_('gen1', generalOk ? 'hecho' : (filas.length ? 'actual' : ''));
   setPaso_('items1', itemsOk ? 'hecho' : (generalOk ? 'actual' : ''));
   // Si ya se completó lo que pedía el mensaje de error, el mensaje se va.
@@ -1865,10 +2389,15 @@ document.querySelectorAll('[data-logo]').forEach(img => { img.src = 'data:image/
 document.getElementById('pfFecha').valueAsDate = new Date();
 addItem();
 autoNro();
-if(PASS){ hideLogin(); loadLists(); }
-else {
+// Si hay una sesión guardada en este navegador, se entra directo (sin
+// escribir la contraseña). Si la sesión ya no sirve, loadLists muestra el ingreso.
+if(SESION){
+  document.getElementById('emailInput').value = SESION.email || '';
+  hideLogin();
+  loadLists();
+} else {
   showLogin();
-  document.getElementById('listState').textContent = 'Esperando contraseña';
+  document.getElementById('listState').textContent = 'Esperando ingreso';
 }
 </script>
 </body>
